@@ -19,6 +19,9 @@ func TestLoadRepositoryConfig(t *testing.T) {
 	if config.RefreshInterval != time.Second {
 		t.Errorf("RefreshInterval = %s, want 1s", config.RefreshInterval)
 	}
+	if config.Slogan != defaultSlogan {
+		t.Errorf("Slogan = %q, want %q", config.Slogan, defaultSlogan)
+	}
 	if config.RetirementYears != 0 || config.ProfileEnabled {
 		t.Errorf("retirement defaults = years %d, profile %t; want disabled", config.RetirementYears, config.ProfileEnabled)
 	}
@@ -31,8 +34,8 @@ func TestLoadRepositoryConfig(t *testing.T) {
 	if len(config.Workdays) != 5 || !config.Workdays[time.Monday] || !config.Workdays[time.Friday] {
 		t.Errorf("Workdays = %#v, want Monday through Friday", config.Workdays)
 	}
-	if config.AssetsEnabled || config.Assets != 0 || config.Reserve != 0 {
-		t.Errorf("asset defaults = enabled %t, assets %.2f, reserve %.2f; want disabled", config.AssetsEnabled, config.Assets, config.Reserve)
+	if config.AssetsEnabled || config.Assets != 0 || config.Reserve != 0 || config.TargetMonthlySpend != 0 {
+		t.Errorf("asset defaults = enabled %t, assets %.2f, reserve %.2f, target %.2f; want disabled", config.AssetsEnabled, config.Assets, config.Reserve, config.TargetMonthlySpend)
 	}
 	if config.RetirementMode != "full" || config.RetirementUnit != "days" || config.HideAmounts || config.HideRetirementDate {
 		t.Errorf("display defaults = mode %q, unit %q, hide amounts %t, hide retirement %t", config.RetirementMode, config.RetirementUnit, config.HideAmounts, config.HideRetirementDate)
@@ -279,6 +282,8 @@ func TestDisplayAndPrivacyConfigRoundTrip(t *testing.T) {
 	config.RetirementUnit = "workdays"
 	config.HideAmounts = true
 	config.HideRetirementDate = true
+	config.Slogan = "自定义口号"
+	config.TargetMonthlySpend = 3000
 	if err := saveConfig(config, path); err != nil {
 		t.Fatal(err)
 	}
@@ -286,13 +291,15 @@ func TestDisplayAndPrivacyConfigRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if loaded.RetirementMode != "countdown" || loaded.RetirementUnit != "workdays" || !loaded.HideAmounts || !loaded.HideRetirementDate {
+	if loaded.RetirementMode != "countdown" || loaded.RetirementUnit != "workdays" || !loaded.HideAmounts || !loaded.HideRetirementDate || loaded.Slogan != "自定义口号" || loaded.TargetMonthlySpend != 3000 {
 		t.Fatalf("round trip display config = %#v", loaded)
 	}
 }
 
 func TestValidateConfigRejectsInvalidFields(t *testing.T) {
 	tests := map[string]func(*Config){
+		"slogan too long":  func(config *Config) { config.Slogan = strings.Repeat("余", maxSloganRunes+1) },
+		"slogan control":   func(config *Config) { config.Slogan = "bad\nslogan" },
 		"retirement years": func(config *Config) { config.RetirementYears = 101 },
 		"future progress birth": func(config *Config) {
 			config.ProgressBirthDate = configDateOnly(time.Now()).AddDate(0, 0, 1)
@@ -326,6 +333,7 @@ func TestValidateConfigRejectsInvalidFields(t *testing.T) {
 		},
 		"negative reserve": func(config *Config) { config.Reserve = -1 },
 		"negative assets":  func(config *Config) { config.Assets = -1 },
+		"negative target":  func(config *Config) { config.TargetMonthlySpend = -1 },
 		"negative account": func(config *Config) {
 			config.AssetItems = []AssetItem{{Balance: -1}}
 		},
@@ -347,6 +355,29 @@ func TestValidateConfigRejectsInvalidFields(t *testing.T) {
 				t.Fatal("validateConfig unexpectedly succeeded")
 			}
 		})
+	}
+}
+
+func TestFemaleProfileDoesNotNeedTrack(t *testing.T) {
+	config := defaultConfig()
+	config.ProfileEnabled = true
+	config.BirthDate = mustDate("1990-06-18")
+	config.Sex = "female"
+	config.FemaleTrack = ""
+	path := filepath.Join(t.TempDir(), "config.toml")
+	if err := saveConfig(config, path); err != nil {
+		t.Fatal(err)
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(content), "female_track") {
+		t.Fatalf("new female profile wrote legacy field:\n%s", content)
+	}
+	loaded, err := loadConfig(path)
+	if err != nil || loaded.Sex != "female" || loaded.FemaleTrack != "" {
+		t.Fatalf("female profile round trip = %#v, %v", loaded, err)
 	}
 }
 

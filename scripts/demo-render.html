@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Yuxin Demo</title>
+  <style>
+    html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #07101f; }
+    canvas { display: block; width: 1440px; height: 900px; }
+  </style>
+</head>
+<body>
+  <canvas id="stage" width="1440" height="900"></canvas>
+  <script src="../dist/demo/data.js"></script>
+  <script>
+    const canvas = document.getElementById('stage');
+    const ctx = canvas.getContext('2d');
+    const scene = new URLSearchParams(location.search).get('scene') || 'dashboard';
+    const W = canvas.width, H = canvas.height;
+    const mono = 'Menlo, SFMono-Regular, monospace';
+    const cjk = '"PingFang SC", "Hiragino Sans GB", sans-serif';
+
+    function roundedRect(x, y, w, h, r) {
+      ctx.beginPath();
+      ctx.roundRect(x, y, w, h, r);
+    }
+
+    function background() {
+      const gradient = ctx.createLinearGradient(0, 0, W, H);
+      gradient.addColorStop(0, '#07101f');
+      gradient.addColorStop(.55, '#0b1324');
+      gradient.addColorStop(1, '#101827');
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, W, H);
+      const glow = ctx.createRadialGradient(1120, 160, 10, 1120, 160, 520);
+      glow.addColorStop(0, 'rgba(34,197,94,.10)');
+      glow.addColorStop(1, 'rgba(34,197,94,0)');
+      ctx.fillStyle = glow;
+      ctx.fillRect(0, 0, W, H);
+    }
+
+    function terminal(title) {
+      ctx.save();
+      ctx.shadowColor = 'rgba(0,0,0,.48)';
+      ctx.shadowBlur = 42;
+      ctx.shadowOffsetY = 18;
+      roundedRect(50, 38, 1340, 824, 18);
+      ctx.fillStyle = '#0a1220';
+      ctx.fill();
+      ctx.restore();
+      roundedRect(50, 38, 1340, 824, 18);
+      ctx.strokeStyle = '#263448';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      ctx.fillStyle = '#111c2d';
+      ctx.beginPath();
+      ctx.roundRect(50, 38, 1340, 50, [18, 18, 0, 0]);
+      ctx.fill();
+      for (const [x, color] of [[78, '#ff5f57'], [102, '#febc2e'], [126, '#28c840']]) {
+        ctx.beginPath(); ctx.arc(x, 63, 6, 0, Math.PI * 2); ctx.fillStyle = color; ctx.fill();
+      }
+      ctx.font = `500 14px ${mono}`;
+      ctx.fillStyle = '#9aa8bc';
+      ctx.textAlign = 'center';
+      ctx.fillText(title, W / 2, 68);
+      ctx.textAlign = 'left';
+    }
+
+    function charColor(ch, line) {
+      if ('╭╮╰╯├┤│─'.includes(ch)) return '#53647a';
+      if (ch === '█') return '#34d399';
+      if (ch === '░') return '#334155';
+      if (ch === '◆') return '#fbbf24';
+      if ('●━'.includes(ch)) return '#22d3ee';
+      if (ch === '○') return '#64748b';
+      if (line.includes('今日入账') && line.trim().startsWith('│') && /^│\s+¥/.test(line)) return '#fbbf24';
+      if (line.includes('演示模式')) return '#f8fafc';
+      if (line.includes('正在上班')) return '#4ade80';
+      if (line.includes('[e] 配置')) return '#94a3b8';
+      return '#dbe5f2';
+    }
+
+    function drawRune(ch, x, y, targetWidth, color, fontSize) {
+      ctx.fillStyle = color;
+      const wide = ch.codePointAt(0) > 255 && !'╭╮╰╯├┤│─━◆●○█░✓'.includes(ch);
+      ctx.font = `${fontSize}px ${wide ? cjk : mono}`;
+      const measured = Math.max(1, ctx.measureText(ch).width);
+      const scale = Math.min(1.22, targetWidth / measured);
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.scale(scale, 1);
+      ctx.fillText(ch, 0, 0);
+      ctx.restore();
+    }
+
+    function renderTerminalText(text, options = {}) {
+      const lines = text.split('\n');
+      const fontSize = options.fontSize || 17;
+      const lineHeight = options.lineHeight || 28;
+      ctx.font = `${fontSize}px ${mono}`;
+      const cell = ctx.measureText('M').width;
+      const maxColumns = Math.max(...lines.map(line => [...line].reduce((n, ch) => n + (ch.codePointAt(0) > 255 && !'╭╮╰╯├┤│─━◆●○█░✓'.includes(ch) ? 2 : 1), 0)));
+      const blockWidth = maxColumns * cell;
+      const startX = options.center === false ? 92 : (W - blockWidth) / 2;
+      const totalHeight = lines.length * lineHeight;
+      const startY = options.startY || Math.max(122, 118 + (690 - totalHeight) / 2);
+      for (let row = 0; row < lines.length; row++) {
+        const line = lines[row];
+        let column = 0;
+        for (const ch of line) {
+          const special = '╭╮╰╯├┤│─━◆●○█░✓'.includes(ch);
+          const cells = ch.codePointAt(0) > 255 && !special ? 2 : 1;
+          drawRune(ch, startX + column * cell, startY + row * lineHeight, cells * cell, charColor(ch, line), fontSize);
+          column += cells;
+        }
+      }
+    }
+
+    function intro() {
+      background(); terminal('yuxin — local terminal');
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#f8fafc';
+      ctx.font = `700 74px ${mono}`;
+      ctx.fillText('YUXIN', W / 2, 330);
+      ctx.font = `600 30px ${cjk}`;
+      ctx.fillStyle = '#dbe5f2';
+      ctx.fillText('余薪', W / 2, 385);
+      ctx.font = `500 30px ${cjk}`;
+      ctx.fillStyle = '#4ade80';
+      ctx.fillText('摸鱼有数，下班有期。', W / 2, 475);
+      roundedRect(W / 2 - 245, 535, 490, 54, 27);
+      ctx.fillStyle = '#111f31'; ctx.fill();
+      ctx.strokeStyle = '#2b3b51'; ctx.stroke();
+      ctx.font = `500 19px ${cjk}`;
+      ctx.fillStyle = '#9fb0c5';
+      ctx.fillText('无账号  ·  离线运行  ·  数据只在本地', W / 2, 570);
+      ctx.textAlign = 'left';
+    }
+
+    function dashboard() {
+      background(); terminal('yuxin — 演示模式');
+      renderTerminalText(window.YUXIN_DEMO.dashboard, {fontSize: 16.7, lineHeight: 27.5, startY: 116});
+    }
+
+    function share() {
+      background(); terminal('yuxin share — 演示数据');
+      ctx.font = `600 26px ${cjk}`;
+      ctx.fillStyle = '#f8fafc';
+      ctx.fillText('一键生成可分享画面', 390, 155);
+      ctx.font = `400 18px ${cjk}`;
+      ctx.fillStyle = '#8fa1b7';
+      ctx.fillText('固定合成数据，不暴露工资、存款或退休信息', 390, 192);
+      renderTerminalText(window.YUXIN_DEMO.share, {fontSize: 19, lineHeight: 32, startY: 260});
+    }
+
+    ({intro, dashboard, share}[scene] || dashboard)();
+  </script>
+</body>
+</html>

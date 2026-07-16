@@ -30,6 +30,7 @@ type cliOptions struct {
 	showVersion    bool
 	showHelp       bool
 	forceUpdate    bool
+	purge          bool
 	shareReal      bool
 	shareCard      string
 }
@@ -56,6 +57,25 @@ func runAt(args []string, stdin, stdout, stderr *os.File, now time.Time) int {
 	if opts.command == "update" {
 		if err := runUpdate(stdout, opts.forceUpdate); err != nil {
 			fmt.Fprintf(stderr, "更新失败：%v\n", err)
+			return 1
+		}
+		return 0
+	}
+	if opts.command == "uninstall" {
+		configPath := ""
+		if opts.purge {
+			configPath, _, err = resolveConfigPath(opts)
+			if err != nil {
+				fmt.Fprintf(stderr, "卸载失败：%v\n", err)
+				return 1
+			}
+		}
+		if !isTerminal(stdin) {
+			fmt.Fprintln(stderr, "卸载失败：请在交互式终端中运行 yuxin uninstall。")
+			return 1
+		}
+		if err := runUninstall(stdin, stdout, configPath, opts.purge); err != nil {
+			fmt.Fprintf(stderr, "卸载失败：%v\n", err)
 			return 1
 		}
 		return 0
@@ -125,14 +145,6 @@ func runAt(args []string, stdin, stdout, stderr *os.File, now time.Time) int {
 		}
 		return 0
 	}
-	if opts.command == "web" {
-		if err := runWeb(stdout, config); err != nil {
-			fmt.Fprintf(stderr, "启动本地窗口失败：%v\n", err)
-			return 1
-		}
-		return 0
-	}
-
 	if opts.command == "doctor" {
 		return runDoctor(stdout, stdin, config, path, source, now)
 	}
@@ -202,7 +214,7 @@ func parseArgs(args []string) (cliOptions, error) {
 			opts.interval, opts.hasInterval = interval, true
 		case opts.command == "config" && opts.actionPath == "" && (opts.configAction == "export" || opts.configAction == "import"):
 			opts.actionPath = arg
-		case arg == "once" || arg == "doctor" || arg == "config" || arg == "update" || arg == "share" || arg == "web":
+		case arg == "once" || arg == "doctor" || arg == "config" || arg == "update" || arg == "share" || arg == "uninstall":
 			if opts.command != "" {
 				return opts, fmt.Errorf("只能指定一个命令")
 			}
@@ -221,6 +233,8 @@ func parseArgs(args []string) (cliOptions, error) {
 			opts.shareCard = strings.TrimPrefix(arg, "--card=")
 		case opts.command == "update" && arg == "--force":
 			opts.forceUpdate = true
+		case opts.command == "uninstall" && arg == "--purge":
+			opts.purge = true
 		case arg == "-h" || arg == "--help":
 			opts.showHelp = true
 		default:
@@ -314,8 +328,20 @@ func runDashboard(stdin, stdout, stderr *os.File, config Config, path string, in
 			dashboardConfig.RefreshInterval = intervalOverride
 		}
 		action, code := runDashboardSession(stdin, stdout, stderr, dashboardConfig)
-		if code != 0 || action != "edit" {
+		if code != 0 {
 			return code
+		}
+		if action == "privacy" {
+			updated := cyclePrivacy(config)
+			if err := saveConfig(updated, path); err != nil {
+				fmt.Fprintf(stderr, "隐私模式未保存：%v\n", err)
+				return 2
+			}
+			config = updated
+			continue
+		}
+		if action != "edit" {
+			return 0
 		}
 		updated, err := configureConfig(stdin, stdout, path, config)
 		if err != nil {
@@ -351,9 +377,12 @@ func runDashboardSession(stdin, stdout, stderr *os.File, config Config) (string,
 	fmt.Fprint(stdout, "\x1b[?1049h\x1b[?25l")
 	defer fmt.Fprint(stdout, "\x1b[?25h\x1b[?1049l")
 
-	details := false
-	helpVisible := false
-	demoMode := false
+	const (
+		localView = iota
+		demoView
+		detailsView
+	)
+	view := localView
 	draw := func() error {
 		color := os.Getenv("NO_COLOR") == ""
 		renderConfig := config
@@ -361,16 +390,15 @@ func runDashboardSession(stdin, stdout, stderr *os.File, config Config) (string,
 			snapshot DashboardSnapshot
 			err      error
 		)
-		if demoMode {
+		if view == demoView {
 			snapshot, renderConfig, err = DemoDashboard()
-			renderConfig.RetirementUnit = config.RetirementUnit
 		} else {
 			snapshot, err = CalculateDashboard(time.Now(), renderConfig)
 		}
 		if err != nil {
 			return err
 		}
-		frame := renderDashboard(snapshot, renderConfig, terminalWidth(), terminalHeight(), color, details, helpVisible)
+		frame := renderDashboard(snapshot, renderConfig, terminalWidth(), terminalHeight(), color, view == detailsView)
 		fmt.Fprintf(stdout, "\x1b[H\x1b[2J%s", frame)
 		return nil
 	}
@@ -391,7 +419,7 @@ func runDashboardSession(stdin, stdout, stderr *os.File, config Config) (string,
 				}
 				key := buffer[0]
 				keyChannel <- key
-				if key == 'e' || key == 'E' || key == 'q' || key == 'Q' || key == 3 {
+				if key == 'e' || key == 'E' || key == 'p' || key == 'P' || key == 'q' || key == 'Q' || key == 3 {
 					return
 				}
 			}
@@ -416,21 +444,11 @@ func runDashboardSession(stdin, stdout, stderr *os.File, config Config) (string,
 				return "", 0
 			case 'e', 'E':
 				return "edit", 0
+			case 'p', 'P':
+				return "privacy", 0
 			case 'r', 'R':
-			case 's', 'S':
-				demoMode = !demoMode
-				details = false
-				helpVisible = false
-			case 'u', 'U':
-				config.RetirementUnit = nextRetirementUnit(config.RetirementUnit)
-				details = false
-				helpVisible = false
-			case 'd', 'D':
-				details = !details
-				helpVisible = false
-			case '?':
-				helpVisible = !helpVisible
-				details = false
+			case 'v', 'V':
+				view = (view + 1) % 3
 			default:
 				continue
 			}
@@ -439,19 +457,6 @@ func runDashboardSession(stdin, stdout, stderr *os.File, config Config) (string,
 				return "", 2
 			}
 		}
-	}
-}
-
-func nextRetirementUnit(current string) string {
-	switch current {
-	case "years":
-		return "months"
-	case "months":
-		return "days"
-	case "days":
-		return "workdays"
-	default:
-		return "years"
 	}
 }
 
@@ -492,7 +497,7 @@ func remindHolidayData(output io.Writer, now time.Time) {
 	fmt.Fprintf(output, "提醒：当前版本未附带 %d 年节假日数据，请运行 yuxin update --force。\n", now.Year())
 }
 
-const usage = `用法：yuxin [once|config|doctor|share|web|update] [选项]
+const usage = `用法：yuxin [once|config|doctor|share|update|uninstall] [选项]
 
 命令：
   once                输出一次仪表盘快照
@@ -503,12 +508,16 @@ const usage = `用法：yuxin [once|config|doctor|share|web|update] [选项]
   doctor              检查运行环境和配置
   share               生成使用合成数据的纯文本分享卡片
   share --real        显式生成真实数据分享卡片
-  web                 打开仅监听本机的轻量入口
   update              安装 GitHub 上的最新正式版
+  uninstall           卸载程序，默认保留本地配置
+  uninstall --purge   卸载程序并清除本地配置
 
 选项：
   --config PATH       使用指定 TOML 配置
   --interval SECONDS  临时覆盖刷新间隔
+  --card TYPE         分享卡类型：overview 或 workday
+  --real              分享卡使用真实本地数据
   --force             强制重新安装 Latest Release
+  --purge             卸载时同时清除本地配置
   --version           显示版本
   -h, --help          显示帮助`

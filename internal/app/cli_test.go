@@ -26,6 +26,13 @@ func TestUpdateIsAFirstClassCommand(t *testing.T) {
 	}
 }
 
+func TestUninstallIsAFirstClassCommand(t *testing.T) {
+	opts, err := parseArgs([]string{"uninstall", "--purge", "--config", "private.toml"})
+	if err != nil || opts.command != "uninstall" || !opts.purge || opts.configPath != "private.toml" {
+		t.Fatalf("parseArgs(uninstall --purge) = %+v, %v", opts, err)
+	}
+}
+
 func TestShareAndConfigTransferArguments(t *testing.T) {
 	opts, err := parseArgs([]string{"share", "--real", "--card", "workday"})
 	if err != nil || opts.command != "share" || !opts.shareReal || opts.shareCard != "workday" {
@@ -83,7 +90,7 @@ func TestExplicitAndEnvironmentConfigPaths(t *testing.T) {
 
 func TestParseArgsRejectsInvalidInput(t *testing.T) {
 	for _, args := range [][]string{
-		{"unknown"}, {"once", "doctor"}, {"--config"}, {"--config="},
+		{"unknown"}, {"web"}, {"once", "doctor"}, {"--config"}, {"--config="},
 		{"--interval"}, {"--interval", "0"}, {"--interval=invalid"},
 	} {
 		if _, err := parseArgs(args); err == nil {
@@ -98,7 +105,7 @@ func TestRunCommonNonInteractiveCommands(t *testing.T) {
 		t.Fatalf("version = code %d, output %q, stderr %q", code, output, stderr)
 	}
 	code, output, stderr = runForTest(t, []string{"--help"}, "")
-	if code != 0 || !strings.Contains(output, "安装 GitHub 上的最新正式版") || stderr != "" {
+	if code != 0 || !strings.Contains(output, "安装 GitHub 上的最新正式版") || strings.Contains(output, "\t") || stderr != "" {
 		t.Fatalf("help = code %d, output %q, stderr %q", code, output, stderr)
 	}
 	code, _, stderr = runForTest(t, []string{"unknown"}, "")
@@ -193,16 +200,6 @@ func TestRunReportsDataCommandErrors(t *testing.T) {
 		code, _, stderr := runForTest(t, test.args, test.input)
 		if code == 0 || !strings.Contains(stderr, test.want) {
 			t.Errorf("run(%q) = %d, stderr %q; want %q", test.args, code, stderr, test.want)
-		}
-	}
-}
-
-func TestRetirementUnitCycle(t *testing.T) {
-	unit := "years"
-	for _, want := range []string{"months", "days", "workdays", "years"} {
-		unit = nextRetirementUnit(unit)
-		if unit != want {
-			t.Fatalf("next unit = %q, want %q", unit, want)
 		}
 	}
 }

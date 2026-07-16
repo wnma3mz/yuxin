@@ -1,8 +1,8 @@
 package app
 
 import (
-	"bufio"
 	"bytes"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -13,7 +13,7 @@ func TestConfigWizardEditsRefreshInterval(t *testing.T) {
 	config := testFullConfig()
 	path := filepath.Join(t.TempDir(), "config.toml")
 	var output bytes.Buffer
-	updated, err := configureConfig(strings.NewReader("3\ninvalid\n0.5\n0\n"), &output, path, config)
+	updated, err := configureConfig(strings.NewReader("5\n1\ninvalid\n0.5\n0\n"), &output, path, config)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -22,38 +22,30 @@ func TestConfigWizardEditsRefreshInterval(t *testing.T) {
 	}
 }
 
-func TestConfigWizardAddsAndDeletesAccount(t *testing.T) {
+func TestConfigWizardEditsSlogan(t *testing.T) {
 	config := testFullConfig()
 	path := filepath.Join(t.TempDir(), "config.toml")
 	var output bytes.Buffer
-	input := "5\n3\na\n定期\n2\n3w\nd\n2\n0\n0\n0\n"
+	updated, err := configureConfig(strings.NewReader("5\n2\n今日有数，下班有期。\n0\n"), &output, path, config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Slogan != "今日有数，下班有期。" {
+		t.Fatalf("slogan = %q", updated.Slogan)
+	}
+}
+
+func TestConfigWizardSetsSingleDeposit(t *testing.T) {
+	config := testFullConfig()
+	path := filepath.Join(t.TempDir(), "config.toml")
+	var output bytes.Buffer
+	input := "4\n3w\n0\n0\n"
 	updated, err := configureConfig(strings.NewReader(input), &output, path, config)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(updated.AssetItems) != 1 || updated.AssetItems[0].Name != "当前余额" {
-		t.Fatalf("accounts = %#v", updated.AssetItems)
-	}
-}
-
-func TestWizardSecretAndYesNoWithPlainInput(t *testing.T) {
-	var output bytes.Buffer
-	wizard := configWizard{
-		input:  strings.NewReader("secret\nmaybe\nyes\n"),
-		reader: bufio.NewReader(strings.NewReader("secret\nmaybe\nyes\n")),
-		out:    &output,
-	}
-	// Keep input and reader on the same stream, as configureConfig does.
-	stream := strings.NewReader("secret\nmaybe\nyes\n")
-	wizard.input = stream
-	wizard.reader = bufio.NewReader(stream)
-	secret, err := wizard.secret("密码")
-	if err != nil || secret != "secret" {
-		t.Fatalf("secret = %q, %v", secret, err)
-	}
-	answer, err := wizard.yesNo("确认", false)
-	if err != nil || !answer || !strings.Contains(output.String(), "请输入 y 或 n") {
-		t.Fatalf("yesNo = %t, %v, output %q", answer, err, output.String())
+	if updated.Assets != 30000 || len(updated.AssetItems) != 1 || updated.AssetItems[0].Name != "存款" || updated.AssetItems[0].Kind != "deposit" {
+		t.Fatalf("deposit = %.2f, items = %#v", updated.Assets, updated.AssetItems)
 	}
 }
 
@@ -86,7 +78,7 @@ func TestConfigWizardAcceptsCompactAssetAmount(t *testing.T) {
 	config := testFullConfig()
 	path := filepath.Join(t.TempDir(), "config.toml")
 	var output bytes.Buffer
-	updated, err := configureConfig(strings.NewReader("5\n1\n200k\n0\n0\n"), &output, path, config)
+	updated, err := configureConfig(strings.NewReader("4\n200k\n0\n0\n"), &output, path, config)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,21 +87,21 @@ func TestConfigWizardAcceptsCompactAssetAmount(t *testing.T) {
 	}
 }
 
-func TestEditingCurrentBalancePreservesOtherAccounts(t *testing.T) {
+func TestEditingDepositCollapsesLegacyAccounts(t *testing.T) {
 	config := testFullConfig()
 	config.AssetItems = []AssetItem{
 		{Name: "工资卡", Kind: "checking", Balance: 100000},
 		{Name: "定期", Kind: "deposit", Balance: 300000},
 	}
-	config.Assets = assetTotal(config.AssetItems)
+	config.Assets = 400000
 	path := filepath.Join(t.TempDir(), "config.toml")
 	var output bytes.Buffer
-	updated, err := configureConfig(strings.NewReader("5\n1\n20w\n0\n0\n"), &output, path, config)
+	updated, err := configureConfig(strings.NewReader("4\n20w\n0\n0\n"), &output, path, config)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(updated.AssetItems) != 2 || updated.AssetItems[0].Balance != 200000 || updated.AssetItems[1].Balance != 300000 {
-		t.Fatalf("editing current balance lost accounts: %#v", updated.AssetItems)
+	if len(updated.AssetItems) != 1 || updated.AssetItems[0].Name != "存款" || updated.AssetItems[0].Balance != 200000 {
+		t.Fatalf("legacy accounts were not simplified: %#v", updated.AssetItems)
 	}
 }
 
@@ -117,7 +109,7 @@ func TestInvalidClockAndChoicesAreNotSilentlySaved(t *testing.T) {
 	config := testFullConfig()
 	path := filepath.Join(t.TempDir(), "config.toml")
 	var output bytes.Buffer
-	input := "2\n\ninvalid\n10:00\n19:00\n\n\n\n0\n"
+	input := "2\n\ninvalid\n10:00\n19:00\n\n0\n"
 	updated, err := configureConfig(strings.NewReader(input), &output, path, config)
 	if err != nil {
 		t.Fatal(err)
@@ -130,42 +122,115 @@ func TestInvalidClockAndChoicesAreNotSilentlySaved(t *testing.T) {
 	}
 }
 
-func TestClosingAssetsRequiresConfirmation(t *testing.T) {
+func TestScheduleUsesSingleLunchDuration(t *testing.T) {
 	config := testFullConfig()
 	path := filepath.Join(t.TempDir(), "config.toml")
 	var output bytes.Buffer
-	updated, err := configureConfig(strings.NewReader("5\n4\n\n0\n0\n"), &output, path, config)
+	updated, err := configureConfig(strings.NewReader("2\n\n14:00\n22:00\n90\n0\n"), &output, path, config)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !updated.AssetsEnabled || len(updated.AssetItems) != 1 {
-		t.Fatalf("assets were deleted without confirmation: %#v", updated.AssetItems)
+	if !updated.LunchEnabled || updated.LunchEnd-updated.LunchStart != 90*60 || updated.LunchStart != 17*3600+15*60 {
+		t.Fatalf("lunch = enabled %t, %s-%s", updated.LunchEnabled, clock(updated.LunchStart), clock(updated.LunchEnd))
+	}
+
+	var disabledOutput bytes.Buffer
+	disabled, err := configureConfig(strings.NewReader("2\n\n\n\n0\n0\n"), &disabledOutput, filepath.Join(t.TempDir(), "config.toml"), config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if disabled.LunchEnabled {
+		t.Fatal("zero lunch duration did not disable lunch")
 	}
 }
 
-func TestConfigWizardAcceptsManualRetirementProfile(t *testing.T) {
+func TestZeroDepositClosesAssets(t *testing.T) {
 	config := testFullConfig()
 	path := filepath.Join(t.TempDir(), "config.toml")
 	var output bytes.Buffer
-	updated, err := configureConfig(strings.NewReader("4\n2\n1992-02-03\n2\n1\n1\n3\n0\n"), &output, path, config)
+	updated, err := configureConfig(strings.NewReader("4\n0\n0\n"), &output, path, config)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if updated.BirthDate.Format("2006-01-02") != "1992-02-03" || updated.Sex != "female" || updated.FemaleTrack != "50" {
-		t.Fatalf("profile = %s %s %s", updated.BirthDate, updated.Sex, updated.FemaleTrack)
+	if updated.AssetsEnabled || updated.Assets != 0 || len(updated.AssetItems) != 0 || updated.Reserve != 0 || updated.TargetMonthlySpend != 0 {
+		t.Fatalf("zero deposit did not close assets: %#v", updated)
 	}
 }
 
-func TestParseIdentityNumber(t *testing.T) {
-	birth, sex, err := parseIdentityNumber("11010519491231002X")
+func TestConfigWizardSetsMonthlySavingsTarget(t *testing.T) {
+	config := testFullConfig()
+	path := filepath.Join(t.TempDir(), "config.toml")
+	var output bytes.Buffer
+	updated, err := configureConfig(strings.NewReader("4\n10w\n3000\n0\n"), &output, path, config)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if birth.Format("2006-01-02") != "1949-12-31" || sex != "female" {
-		t.Fatalf("identity = %s %s", birth, sex)
+	if updated.Assets != 100000 || updated.TargetMonthlySpend != 3000 {
+		t.Fatalf("savings target = %#v", updated)
 	}
-	if _, _, err := parseIdentityNumber("110105194912310021"); err == nil {
-		t.Fatal("invalid checksum unexpectedly accepted")
+	if !strings.Contains(output.String(), "目标每月可花") {
+		t.Fatalf("target prompt missing: %q", output.String())
+	}
+}
+
+func TestConfigWizardSetsRetirementFromAgeAndDefaultsToMale(t *testing.T) {
+	config := testFullConfig()
+	config.ProfileEnabled = false
+	path := filepath.Join(t.TempDir(), "config.toml")
+	var output bytes.Buffer
+	updated, err := configureConfig(strings.NewReader("3\n30\n\n0\n"), &output, path, config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !updated.ProfileEnabled || updated.RetirementYears != 0 || updated.RetirementMode != "full" || updated.Sex != "male" {
+		t.Fatalf("retirement = %#v", updated)
+	}
+	if ageOnDate(updated.BirthDate, configDateOnly(time.Now())) != 30 {
+		t.Fatalf("birth date was not derived from age: %s", updated.BirthDate)
+	}
+}
+
+func TestClosingRetirementClearsPersonalProfile(t *testing.T) {
+	config := testFullConfig()
+	config.BirthDate = mustDate("1990-06-18")
+	config.ProgressBirthDate = config.BirthDate
+	path := filepath.Join(t.TempDir(), "config.toml")
+	var output bytes.Buffer
+	updated, err := configureConfig(strings.NewReader("3\n0\n0\n"), &output, path, config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.ProfileEnabled || !updated.BirthDate.IsZero() || updated.Sex != "" || updated.ProgressBirthDate.Format("2006-01-02") == "1990-06-18" {
+		t.Fatalf("retirement profile was retained: %#v", updated)
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(content), "1990-06-18") || strings.Contains(string(content), "[profile]") {
+		t.Fatalf("saved config retained retirement profile:\n%s", content)
+	}
+}
+
+func TestParseAgeOrBirth(t *testing.T) {
+	today := time.Date(2026, time.July, 16, 0, 0, 0, 0, time.Local)
+	tests := map[string]string{
+		"30":         "1996-07-16",
+		"1995-06":    "1995-06-01",
+		"1995/6/18":  "1995-06-18",
+		"1995年6月":    "1995-06-01",
+		"1995年6月18日": "1995-06-18",
+	}
+	for input, want := range tests {
+		birth, err := parseAgeOrBirth(input, today)
+		if err != nil || birth.Format("2006-01-02") != want {
+			t.Errorf("parseAgeOrBirth(%q) = %s, %v; want %s", input, birth, err, want)
+		}
+	}
+	for _, input := range []string{"0", "101", "2027-01", "not-a-date"} {
+		if _, err := parseAgeOrBirth(input, today); err == nil {
+			t.Errorf("parseAgeOrBirth(%q) unexpectedly succeeded", input)
+		}
 	}
 }
 
@@ -176,7 +241,7 @@ func TestSaveConfigPreservesMultipleAccounts(t *testing.T) {
 		{Name: "工资卡", Kind: "checking", Balance: 12345.67},
 		{Name: "定期", Kind: "deposit", Balance: 200000},
 	}
-	config.Assets = assetTotal(config.AssetItems)
+	config.Assets = 212345.67
 	path := filepath.Join(t.TempDir(), "config.toml")
 	if err := saveConfig(config, path); err != nil {
 		t.Fatal(err)
@@ -190,16 +255,16 @@ func TestSaveConfigPreservesMultipleAccounts(t *testing.T) {
 	}
 }
 
-func TestConfigWizardEditsPrivacyAndRetirementDisplay(t *testing.T) {
+func TestConfigWizardEditsRetirement(t *testing.T) {
 	config := testFullConfig()
 	path := filepath.Join(t.TempDir(), "config.toml")
 	var output bytes.Buffer
-	input := "6\ny\ny\n4\n3\n2\n4\n0\n"
+	input := "3\n1990-06\n2\n0\n"
 	updated, err := configureConfig(strings.NewReader(input), &output, path, config)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !updated.HideAmounts || !updated.HideRetirementDate || updated.RetirementMode != "countdown" || updated.RetirementUnit != "workdays" {
+	if updated.HideAmounts || updated.HideRetirementDate || updated.RetirementMode != "full" || !updated.ProfileEnabled || updated.Sex != "female" || updated.BirthDate.Format("2006-01-02") != "1990-06-01" {
 		t.Fatalf("updated display config = %#v", updated)
 	}
 }
@@ -218,7 +283,43 @@ func TestWizardSummaryHonorsPrivacySettings(t *testing.T) {
 			t.Fatalf("summary leaked %q: %s", secret, output.String())
 		}
 	}
-	if !strings.Contains(output.String(), "¥••••") || !strings.Contains(output.String(), "日期隐藏") {
+	if !strings.Contains(output.String(), "¥••••") || strings.Contains(output.String(), "隐私模式") {
 		t.Fatalf("summary did not show privacy state: %s", output.String())
+	}
+}
+
+func TestConfigWizardDoesNotSaveNoOpEdit(t *testing.T) {
+	config := testFullConfig()
+	config.AssetItems = []AssetItem{{Name: "存款", Kind: "deposit", Balance: config.Assets}}
+	path := filepath.Join(t.TempDir(), "config.toml")
+	var output bytes.Buffer
+	updated, err := configureConfig(strings.NewReader("4\n\n0\n0\n"), &output, path, config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output.String(), "未修改") {
+		t.Fatalf("output = %q", output.String())
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("no-op edit wrote config: %v", err)
+	}
+	if updated.HideAmounts != config.HideAmounts || updated.HideRetirementDate != config.HideRetirementDate {
+		t.Fatalf("no-op changed privacy: %#v", updated)
+	}
+}
+
+func TestPrivacyModeCyclesThroughThreeStates(t *testing.T) {
+	config := testFullConfig()
+	amounts := cyclePrivacy(config)
+	if !amounts.HideAmounts || amounts.HideRetirementDate {
+		t.Fatalf("first privacy state = %#v", amounts)
+	}
+	all := cyclePrivacy(amounts)
+	if !all.HideAmounts || !all.HideRetirementDate {
+		t.Fatalf("second privacy state = %#v", all)
+	}
+	off := cyclePrivacy(all)
+	if off.HideAmounts || off.HideRetirementDate {
+		t.Fatalf("third privacy state = %#v", off)
 	}
 }

@@ -1,6 +1,7 @@
 # 余薪 Yuxin 默认配置
 version = 1
 refresh_interval = 1
+slogan = "摸鱼有数，下班有期。"
 # 退休和资产默认关闭；运行 `yuxin config` 可按需开启。
 retirement_years = 0
 retirement_start_date = "2026-07-16"
@@ -8,6 +9,7 @@ progress_birth_date = "1995-01-01"
 retirement_mode = "full"
 retirement_unit = "days"
 reserve = "0"
+target_monthly_spend = "0"
 assets_enabled = false
 profile_enabled = false
 

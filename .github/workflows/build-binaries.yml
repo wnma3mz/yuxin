@@ -35,8 +35,8 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-go@v6
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version: stable
           cache: false
@@ -57,61 +57,6 @@ jobs:
           --platform "${{ matrix.platform }}"
           --output-dir release
           --expected-tag "${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}"
-      - name: Validate macOS launcher
-        if: runner.os == 'macOS'
-        shell: bash
-        run: |
-          unzip -q release/*.zip -d launcher-check
-          root="$(find launcher-check -mindepth 1 -maxdepth 1 -type d -print -quit)"
-          launcher="$root/Open-Yuxin.app/Contents/MacOS/Open-Yuxin"
-          plutil -lint "$root/Open-Yuxin.app/Contents/Info.plist"
-          sh -n "$launcher"
-          # shellcheck disable=SC2016
-          printf '#!/bin/sh\nprintf "%%s" "$*" > "$YUXIN_LAUNCHER_PROBE"\n' > "$root/yuxin"
-          chmod 755 "$root/yuxin"
-          YUXIN_LAUNCHER_PROBE="$RUNNER_TEMP/launcher-args" "$launcher"
-          test "$(cat "$RUNNER_TEMP/launcher-args")" = "web"
-      - name: Validate Linux launcher
-        if: runner.os == 'Linux'
-        shell: bash
-        run: |
-          unzip -q release/*.zip -d launcher-check
-          root="$(find launcher-check -mindepth 1 -maxdepth 1 -type d -print -quit)"
-          desktop="$(realpath "$root/Open-Yuxin.desktop")"
-          test -x "$desktop"
-          sudo apt-get update
-          sudo apt-get install --yes desktop-file-utils libglib2.0-bin
-          desktop-file-validate "$desktop"
-          # shellcheck disable=SC2016
-          printf '#!/bin/sh\nprintf "%%s" "$*" > "$YUXIN_LAUNCHER_PROBE"\n' > "$root/yuxin"
-          chmod 755 "$root/yuxin"
-          GIO_LAUNCHED_DESKTOP_FILE="$desktop" YUXIN_LAUNCHER_PROBE="$RUNNER_TEMP/launcher-args" gio launch "$desktop"
-          for _ in $(seq 1 50); do
-            test -f "$RUNNER_TEMP/launcher-args" && break
-            sleep 0.1
-          done
-          test "$(cat "$RUNNER_TEMP/launcher-args")" = "web"
-      - name: Validate Windows launcher
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          Expand-Archive -Path (Get-ChildItem release/*.zip).FullName -DestinationPath launcher-check
-          $root = (Get-ChildItem launcher-check -Directory | Select-Object -First 1).FullName
-          $probeSource = Join-Path $env:RUNNER_TEMP "launcher-probe.go"
-          @'
-          package main
-          import ("os"; "strings")
-          func main() { _ = os.WriteFile(os.Getenv("YUXIN_LAUNCHER_PROBE"), []byte(strings.Join(os.Args[1:], " ")), 0644) }
-          '@ | Set-Content -Encoding utf8 $probeSource
-          go build -o (Join-Path $root "yuxin.exe") $probeSource
-          $env:YUXIN_LAUNCHER_PROBE = Join-Path $env:RUNNER_TEMP "launcher-args"
-          cscript.exe //nologo (Join-Path $root "Open-Yuxin.vbs")
-          for ($attempt = 0; $attempt -lt 50 -and -not (Test-Path $env:YUXIN_LAUNCHER_PROBE); $attempt++) {
-              Start-Sleep -Milliseconds 100
-          }
-          if ((Get-Content -Raw $env:YUXIN_LAUNCHER_PROBE) -ne "web") {
-              throw "Windows launcher did not invoke yuxin.exe web."
-          }
       - uses: actions/upload-artifact@v7
         with:
           name: yuxin-${{ matrix.platform }}

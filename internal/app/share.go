@@ -42,28 +42,37 @@ func writeShareCard(output io.Writer, snapshot DashboardSnapshot, config Config,
 }
 
 func shareOverviewRows(snapshot DashboardSnapshot, config Config) []string {
+	countdownLabel := shareCountdownLabel(snapshot.Salary)
 	rows := []string{
 		shareDataLabel(snapshot),
 		shareMetric("今日入账", shareAmount(snapshot.Salary.EarnedToday, config.HideAmounts)),
 		shareMetric("今日预计", shareAmount(snapshot.Salary.ExpectedToday, config.HideAmounts)),
 		shareMetric("工作进度", fmt.Sprintf("%.1f%%", clampFloat(snapshot.Salary.Progress, 0, 1)*100)),
-		shareMetric("下班倒计时", shareRemaining(snapshot.Salary)),
+		shareMetric(countdownLabel, shareRemaining(snapshot.Salary)),
 	}
 	if snapshot.Holiday != nil {
 		rows = append(rows, shareMetric("节假日", holidayText(*snapshot.Holiday)))
 	}
 	if snapshot.RetirementEnabled {
-		if config.RetirementMode == "full" {
+		if config.HideRetirementDate {
+			rows = append(rows, shareMetric("退休信息", "已隐藏"))
+		} else if config.RetirementMode == "full" {
 			retirement := retirementDate(snapshot.Retirement)
-			if config.HideRetirementDate {
-				retirement = "已隐藏"
-			}
 			rows = append(rows, shareMetric("预计退休", retirement))
+			rows = append(rows, shareMetric("距离退休", retirementDistance(snapshot)))
+		} else {
+			rows = append(rows, shareMetric("距离退休", retirementDistance(snapshot)))
 		}
-		rows = append(rows, shareMetric("距离退休", retirementDistance(snapshot, config.RetirementUnit)))
 	}
 	if snapshot.AssetsEnabled {
-		rows = append(rows, shareMetric("本地资产", shareAmount(snapshot.TotalAssets, config.HideAmounts)))
+		rows = append(rows, shareMetric("本地存款", shareAmount(snapshot.TotalAssets, config.HideAmounts)))
+		if snapshot.SavingsTarget > 0 {
+			value := "已隐藏"
+			if !config.HideAmounts {
+				value = fmt.Sprintf("%.0f%% · 还差 %s", snapshot.SavingsProgress*100, shareAmount(snapshot.SavingsGap, false))
+			}
+			rows = append(rows, shareMetric("存款目标", value))
+		}
 	}
 	return rows
 }
@@ -73,7 +82,7 @@ func shareWorkdayRows(snapshot DashboardSnapshot, config Config) []string {
 	return []string{
 		shareDataLabel(snapshot),
 		shareMetric("今日状态", strings.TrimSpace(status)),
-		shareMetric("下班倒计时", shareRemaining(snapshot.Salary)),
+		shareMetric(shareCountdownLabel(snapshot.Salary), shareRemaining(snapshot.Salary)),
 		shareMetric("已工作", duration(snapshot.Salary.ElapsedSeconds)),
 		shareMetric("工作进度", fmt.Sprintf("%.1f%%", clampFloat(snapshot.Salary.Progress, 0, 1)*100)),
 		shareMetric("今日入账", shareAmount(snapshot.Salary.EarnedToday, config.HideAmounts)),
@@ -100,6 +109,17 @@ func shareRemaining(salary SalarySnapshot) string {
 	}
 	status, _ := statusText(salary.Status)
 	return strings.TrimSpace(strings.TrimLeft(status, "●○✓◐"))
+}
+
+func shareCountdownLabel(salary SalarySnapshot) string {
+	switch salary.Status {
+	case "before-work":
+		return "上班倒计时"
+	case "working", "lunch-break":
+		return "下班倒计时"
+	default:
+		return "工作状态"
+	}
 }
 
 func shareAmount(value float64, hidden bool) string {

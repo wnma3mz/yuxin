@@ -1,6 +1,7 @@
 package app
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -37,13 +38,31 @@ func TestRenderDashboardPlainSnapshot(t *testing.T) {
 	}
 
 	output := RenderDashboard(snapshot, config, 80, false)
-	for _, expected := range []string{"余薪 YUXIN", "今日入账", "¥286.37", "距离下班", "退休倒计时", "资产续航", "[q] 退出"} {
+	for _, expected := range []string{"余薪 YUXIN", defaultSlogan, "今日入账", "¥286.37", "距离下班", "退休倒计时", "实时存款余额", "现在退休每天可花", "现在退休每月可花", "现在退休每年可花", "[p] 隐私", "[v] 视图", "[q] 退出"} {
 		if !strings.Contains(output, expected) {
 			t.Errorf("rendered output does not contain %q", expected)
 		}
 	}
 	if strings.Contains(output, "\x1b[") {
 		t.Fatal("plain rendering contains ANSI escapes")
+	}
+	if strings.Contains(output, "[s] ") || strings.Contains(output, "[d] ") {
+		t.Fatalf("旧视图快捷键仍在底栏:\n%s", output)
+	}
+}
+
+func TestCustomSloganIsCenteredAndHiddenWhenNarrow(t *testing.T) {
+	config := defaultConfig()
+	config.Slogan = "自定义口号"
+	snapshot, err := CalculateDashboard(time.Date(2026, time.July, 16, 15, 0, 0, 0, time.Local), config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if output := RenderDashboard(snapshot, config, 80, false); !strings.Contains(output, config.Slogan) {
+		t.Fatalf("wide dashboard omitted slogan:\n%s", output)
+	}
+	if output := RenderDashboard(snapshot, config, 60, false); strings.Contains(output, config.Slogan) {
+		t.Fatalf("narrow dashboard should hide slogan:\n%s", output)
 	}
 }
 
@@ -57,10 +76,31 @@ func TestDisabledModulesAreHidden(t *testing.T) {
 		t.Fatal(err)
 	}
 	output := RenderDashboard(snapshot, config, 80, false)
-	for _, forbidden := range []string{"0001-01", "退休倒计时", "资产续航", "实时余额", "每天可花"} {
+	for _, forbidden := range []string{"0001-01", "退休倒计时", "实时存款余额", "每天可花"} {
 		if strings.Contains(output, forbidden) {
 			t.Errorf("disabled output contains %q", forbidden)
 		}
+	}
+}
+
+func TestBeforeAndAfterWorkUseMatchingCountdownText(t *testing.T) {
+	config := defaultConfig()
+	before, err := CalculateDashboard(time.Date(2026, time.July, 16, 8, 0, 0, 0, time.Local), config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	beforeOutput := RenderDashboard(before, config, 80, false)
+	if !strings.Contains(beforeOutput, "尚未上班") || !strings.Contains(beforeOutput, "距离上班 1h 00m") || strings.Contains(beforeOutput, "距离下班") {
+		t.Fatalf("before-work output has inconsistent countdown:\n%s", beforeOutput)
+	}
+
+	after, err := CalculateDashboard(time.Date(2026, time.July, 16, 19, 0, 0, 0, time.Local), config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	afterOutput := RenderDashboard(after, config, 80, false)
+	if !strings.Contains(afterOutput, "已经下班") || strings.Contains(afterOutput, "距离下班") || strings.Contains(afterOutput, "距离上班") {
+		t.Fatalf("after-work output has inconsistent countdown:\n%s", afterOutput)
 	}
 }
 
@@ -73,7 +113,7 @@ func TestDisabledAssetsDoNotLeakDailyBudget(t *testing.T) {
 	}
 	for _, width := range []int{40, 80} {
 		output := RenderDashboard(snapshot, config, width, false)
-		if strings.Contains(output, "每天可花") || strings.Contains(output, "资产续航") {
+		if strings.Contains(output, "每天可花") || strings.Contains(output, "当前存款") {
 			t.Fatalf("width %d leaked disabled assets:\n%s", width, output)
 		}
 	}
@@ -133,11 +173,20 @@ func TestFormattingHelpers(t *testing.T) {
 func TestStatusAndFormattingVariants(t *testing.T) {
 	for status, expected := range map[string]string{
 		"working": "正在上班", "before-work": "尚未上班", "lunch-break": "午休中",
-		"after-work": "今日下班", "rest-day": "今日休息", "custom": "custom",
+		"after-work": "已经下班", "rest-day": "今日休息", "custom": "custom",
 	} {
 		text, _ := statusText(status)
 		if !strings.Contains(text, expected) {
 			t.Errorf("statusText(%q) = %q", status, text)
+		}
+	}
+	for status, expected := range map[string]string{
+		"before-work": "摸鱼先热身",
+		"after-work":  "快乐已到账",
+	} {
+		text, _ := workStatus(DashboardSnapshot{Salary: SalarySnapshot{Status: status}}, defaultConfig())
+		if !strings.Contains(text, expected) {
+			t.Errorf("workStatus(%q) = %q", status, text)
 		}
 	}
 	for status, expected := range map[string]string{
@@ -166,7 +215,7 @@ func TestWorkSloganAndHolidayTimeline(t *testing.T) {
 		t.Fatal(err)
 	}
 	output := RenderDashboard(snapshot, config, 100, false)
-	for _, expected := range []string{"三点几啦，饮茶先！", "◆", "今天 26.0%", "已过 25 天", "还剩 71 天"} {
+	for _, expected := range []string{"三点几啦，饮茶先！", "◆", "已过 25 天", "还剩 71 天"} {
 		if !strings.Contains(output, expected) {
 			t.Errorf("rendered output does not contain %q", expected)
 		}
@@ -184,7 +233,7 @@ func TestResponsiveDashboardLayout(t *testing.T) {
 	wide := RenderDashboard(snapshot, config, 100, false)
 	foundSideBySide := false
 	for _, line := range strings.Split(wide, "\n") {
-		if strings.Contains(line, "退休倒计时") && strings.Contains(line, "资产续航") {
+		if strings.Contains(line, "退休倒计时") && strings.Contains(line, "存款") {
 			foundSideBySide = true
 			break
 		}
@@ -195,38 +244,34 @@ func TestResponsiveDashboardLayout(t *testing.T) {
 
 	medium := RenderDashboard(snapshot, config, 80, false)
 	for _, line := range strings.Split(medium, "\n") {
-		if strings.Contains(line, "退休倒计时") && strings.Contains(line, "资产续航") {
+		if strings.Contains(line, "退休倒计时") && strings.Contains(line, "存款") {
 			t.Fatal("80-column layout unexpectedly rendered panels side by side")
 		}
 	}
 
 	narrow := RenderDashboard(snapshot, config, 60, false)
-	for _, expected := range []string{"本地数据 ✓", "下班", "未来", "现在退休每天可花"} {
+	for _, expected := range []string{"本地数据 ✓", "下班", "未来", "实时存款余额"} {
 		if !strings.Contains(narrow, expected) {
 			t.Errorf("60-column output does not contain %q", expected)
 		}
 	}
-	for _, forbidden := range []string{"09:00", "18:00", "◆", "资产续航", "实时余额"} {
+	for _, forbidden := range []string{"09:00", "18:00", "◆"} {
 		if strings.Contains(narrow, forbidden) {
 			t.Errorf("60-column output contains %q", forbidden)
 		}
 	}
 }
 
-func TestDashboardDetailsAndHelpAreInteractiveViews(t *testing.T) {
+func TestDashboardDetailsView(t *testing.T) {
 	config := defaultConfig()
 	snapshot, err := CalculateDashboard(time.Date(2026, time.July, 16, 15, 0, 0, 0, time.Local), config)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	details := renderDashboard(snapshot, config, 80, 24, false, true, false)
-	if !strings.Contains(details, "计算口径") || strings.Contains(details, "资产续航") {
+	details := renderDashboard(snapshot, config, 80, 24, false, true)
+	if !strings.Contains(details, "计算口径") || strings.Contains(details, "当前存款") {
 		t.Fatalf("unexpected details view:\n%s", details)
-	}
-	help := renderDashboard(snapshot, config, 80, 24, false, false, true)
-	if !strings.Contains(help, "快捷键") || !strings.Contains(help, "s 隐私演示") || !strings.Contains(help, "q 退出") {
-		t.Fatalf("unexpected help view:\n%s", help)
 	}
 }
 
@@ -236,10 +281,14 @@ func TestDemoDashboardIsClearlyMarked(t *testing.T) {
 		t.Fatal(err)
 	}
 	output := RenderDashboard(snapshot, config, 80, false)
-	for _, expected := range []string{"演示数据 ✓", "¥258,000.00", "退休进度（18岁起）"} {
+	for _, expected := range []string{"余薪 YUXIN · 演示模式", "演示数据 ✓", "¥258,521.38", "距离退休"} {
 		if !strings.Contains(output, expected) {
 			t.Errorf("demo output does not contain %q", expected)
 		}
+	}
+	tiny := RenderDashboard(snapshot, config, 23, false)
+	if !strings.Contains(tiny, "演示模式") {
+		t.Fatalf("tiny demo output is not clearly marked:\n%s", tiny)
 	}
 }
 
@@ -249,8 +298,8 @@ func TestShortTerminalUsesCompactPanels(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	output := renderDashboard(snapshot, config, 100, 23, false, false, false)
-	if !strings.Contains(output, "未来") || strings.Contains(output, "资产续航") || strings.Contains(output, "◆") {
+	output := renderDashboard(snapshot, config, 100, 23, false, false)
+	if !strings.Contains(output, "未来") || strings.Contains(output, "╭─ 存款") || strings.Contains(output, "◆") {
 		t.Fatalf("short terminal did not use compact layout:\n%s", output)
 	}
 }
@@ -261,9 +310,9 @@ func TestStandard80By24TerminalDoesNotOverflow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	output := renderDashboard(snapshot, config, 80, 24, false, false, false)
+	output := renderDashboard(snapshot, config, 80, 24, false, false)
 	lines := strings.Split(output, "\n")
-	if len(lines) > 24 || !strings.Contains(output, "未来") || strings.Contains(output, "资产续航") {
+	if len(lines) > 24 || !strings.Contains(output, "退休倒计时") || !strings.Contains(output, "实时存款余额") {
 		t.Fatalf("80x24 layout uses %d lines:\n%s", len(lines), output)
 	}
 }
@@ -282,34 +331,86 @@ func TestPrivacySettingsHideDashboardFields(t *testing.T) {
 			t.Fatalf("privacy output leaked %q:\n%s", leaked, output)
 		}
 	}
-	if !strings.Contains(output, "¥••••") || strings.Contains(output, "预计退休") {
+	if !strings.Contains(output, "¥••••") || !strings.Contains(output, "退休信息") || strings.Contains(output, "距离退休还有") || strings.Contains(output, "退休进度") {
 		t.Fatalf("privacy settings were not applied:\n%s", output)
 	}
 }
 
-func TestRetirementCountdownModeAndUnits(t *testing.T) {
+func TestAmountOnlyPrivacyKeepsRetirementData(t *testing.T) {
+	config := testFullConfig()
+	config.HideAmounts = true
+	config.HideRetirementDate = false
+	snapshot, err := CalculateDashboard(time.Date(2026, time.July, 16, 15, 0, 0, 0, time.Local), config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	output := RenderDashboard(snapshot, config, 100, false)
+	if !strings.Contains(output, "¥••••") || !strings.Contains(output, "距离退休还有") || !strings.Contains(output, "退休进度（18岁起）") {
+		t.Fatalf("amount-only privacy hid the wrong fields:\n%s", output)
+	}
+	for _, leaked := range []string{"¥227", "¥100,227"} {
+		if strings.Contains(output, leaked) {
+			t.Fatalf("amount-only privacy leaked %q:\n%s", leaked, output)
+		}
+	}
+}
+
+func TestRetirementShowsIntegerTotalUnitsAndProgress(t *testing.T) {
 	config := testFullConfig()
 	config.RetirementMode = "countdown"
 	snapshot, err := CalculateDashboard(time.Date(2026, time.July, 16, 15, 0, 0, 0, time.Local), config)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for unit, suffix := range map[string]string{"years": "年", "months": "个月", "days": "天", "workdays": "个工作日"} {
-		config.RetirementUnit = unit
-		output := RenderDashboard(snapshot, config, 80, false)
-		if !strings.Contains(output, "距离退休") || !strings.Contains(output, suffix) {
-			t.Fatalf("unit %s missing from output:\n%s", unit, output)
-		}
-		for _, hidden := range []string{"预计退休", "法定", "退休进度（18岁起）"} {
-			if strings.Contains(output, hidden) {
-				t.Fatalf("countdown mode contains %q:\n%s", hidden, output)
-			}
+	output := RenderDashboard(snapshot, config, 80, false)
+	days := snapshot.Retirement.RemainingDays
+	expectedValues := []string{
+		fmt.Sprintf("%d 年", int(float64(days)/365.2425)),
+		fmt.Sprintf("%d 个月", int(float64(days)/30.436875)),
+		commaInt(days) + " 天",
+		"退休进度（18岁起）",
+	}
+	for _, expected := range expectedValues {
+		if !strings.Contains(output, expected) {
+			t.Fatalf("retirement panel missing %q:\n%s", expected, output)
 		}
 	}
-	config.RetirementUnit = "workdays"
-	tiny := RenderDashboard(snapshot, config, 23, false)
-	if !strings.Contains(tiny, "工作日") {
-		t.Fatalf("tiny retirement unit was ignored:\n%s", tiny)
+	progressIndex := strings.Index(output, "退休进度（18岁起）")
+	yearsIndex := strings.Index(output, expectedValues[0])
+	if progressIndex < 0 || yearsIndex < 0 || progressIndex > yearsIndex {
+		t.Fatalf("退休进度未显示在倒计时数据之前:\n%s", output)
+	}
+	for _, hidden := range []string{"预计退休", "法定", "个工作日"} {
+		if strings.Contains(output, hidden) {
+			t.Fatalf("countdown mode contains %q:\n%s", hidden, output)
+		}
+	}
+	if got := retirementDistance(DashboardSnapshot{
+		Now:        time.Date(2026, time.July, 16, 0, 0, 0, 0, time.Local),
+		Retirement: RetirementSnapshot{RetirementMonth: time.Date(2058, time.January, 1, 0, 0, 0, 0, time.Local)},
+	}); got != "31 年 5 个月 16 天" {
+		t.Fatalf("retirementDistance = %q", got)
+	}
+}
+
+func TestSavingsTargetShowsProgressAndGap(t *testing.T) {
+	config := testFullConfig()
+	config.TargetMonthlySpend = 3000
+	snapshot, err := CalculateDashboard(time.Date(2026, time.July, 16, 15, 0, 0, 0, time.Local), config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	output := RenderDashboard(snapshot, config, 110, false)
+	for _, expected := range []string{"存款目标", "每天", "每月", "¥3,000.00", "每年", "¥36,000.00", "目标进度", "距离目标还差"} {
+		if !strings.Contains(output, expected) {
+			t.Fatalf("savings target missing %q:\n%s", expected, output)
+		}
+	}
+
+	config.HideAmounts = true
+	hidden := RenderDashboard(snapshot, config, 110, false)
+	if strings.Contains(hidden, "¥3,000.00") || !strings.Contains(hidden, "存款目标") || !strings.Contains(hidden, "已隐藏") {
+		t.Fatalf("savings target privacy failed:\n%s", hidden)
 	}
 }
 

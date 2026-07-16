@@ -23,10 +23,13 @@ const (
 	maxConfigFileSize = 1 << 20
 	maxAssetItems     = 100
 	maxAssetNameRunes = 80
+	maxSloganRunes    = 40
+	defaultSlogan     = "摸鱼有数，下班有期。"
 )
 
 type Config struct {
 	RefreshInterval    time.Duration
+	Slogan             string
 	RetirementYears    int
 	RetirementStart    time.Time
 	ProgressBirthDate  time.Time
@@ -49,6 +52,7 @@ type Config struct {
 	Assets             float64
 	AssetItems         []AssetItem
 	Reserve            float64
+	TargetMonthlySpend float64
 	HideAmounts        bool
 	HideRetirementDate bool
 }
@@ -64,6 +68,7 @@ func defaultConfig() Config {
 	birth := mustDate("1995-01-01")
 	return Config{
 		RefreshInterval:   time.Second,
+		Slogan:            defaultSlogan,
 		RetirementYears:   0,
 		RetirementStart:   today,
 		ProgressBirthDate: birth,
@@ -273,12 +278,14 @@ func saveConfig(config Config, path string) error {
 	lines := []string{
 		"version = 1",
 		"refresh_interval = " + strconv.FormatFloat(config.RefreshInterval.Seconds(), 'f', -1, 64),
+		"slogan = " + q(config.Slogan),
 		"retirement_years = " + strconv.Itoa(config.RetirementYears),
 		"retirement_start_date = " + q(config.RetirementStart.Format("2006-01-02")),
 		"progress_birth_date = " + q(config.ProgressBirthDate.Format("2006-01-02")),
 		"retirement_mode = " + q(config.RetirementMode),
 		"retirement_unit = " + q(config.RetirementUnit),
 		"reserve = " + q(configNumber(config.Reserve)),
+		"target_monthly_spend = " + q(configNumber(config.TargetMonthlySpend)),
 		"assets_enabled = " + strconv.FormatBool(config.AssetsEnabled),
 		"profile_enabled = " + strconv.FormatBool(config.ProfileEnabled),
 		"",
@@ -303,7 +310,7 @@ func saveConfig(config Config, path string) error {
 		lines = append(lines, "", "[profile]",
 			"birth_date = "+q(config.BirthDate.Format("2006-01-02")),
 			"sex = "+q(config.Sex))
-		if config.FemaleTrack != "" {
+		if config.FemaleTrack == "50" {
 			lines = append(lines, "female_track = "+q(config.FemaleTrack))
 		}
 	}
@@ -352,9 +359,10 @@ func configNumber(value float64) string {
 
 func supportedConfigKey(section, key string) bool {
 	supported := map[string]bool{
-		".version": true, ".refresh_interval": true, ".retirement_years": true,
+		".version": true, ".refresh_interval": true, ".slogan": true, ".retirement_years": true,
 		".retirement_start_date": true, ".progress_birth_date": true, ".reserve": true,
-		".retirement_mode": true, ".retirement_unit": true,
+		".target_monthly_spend": true,
+		".retirement_mode":      true, ".retirement_unit": true,
 		".assets_enabled": true, ".profile_enabled": true,
 		"salary.mode": true, "salary.amount": true, "salary.monthly_workdays": true,
 		"schedule.workdays": true, "schedule.start": true, "schedule.end": true,
@@ -379,6 +387,8 @@ func applyConfigValue(config *Config, section, key, value string) error {
 			return fmt.Errorf("必须是数字")
 		}
 		config.RefreshInterval = time.Duration(seconds * float64(time.Second))
+	case ".slogan":
+		config.Slogan = value
 	case ".retirement_years":
 		years, err := strconv.Atoi(value)
 		if err != nil {
@@ -407,6 +417,12 @@ func applyConfigValue(config *Config, section, key, value string) error {
 			return err
 		}
 		config.Reserve = amount
+	case ".target_monthly_spend":
+		amount, err := parseAmount(value)
+		if err != nil {
+			return err
+		}
+		config.TargetMonthlySpend = amount
 	case ".assets_enabled":
 		enabled, err := parseBool(value)
 		if err != nil {
@@ -620,6 +636,9 @@ func validateConfig(config Config) error {
 	if config.RefreshInterval < 100*time.Millisecond || config.RefreshInterval > time.Hour {
 		return fmt.Errorf("刷新间隔必须在 0.1 到 3600 秒之间")
 	}
+	if utf8.RuneCountInString(config.Slogan) > maxSloganRunes || strings.IndexFunc(config.Slogan, unicode.IsControl) >= 0 {
+		return fmt.Errorf("口号不能超过 %d 个字且不能包含控制字符", maxSloganRunes)
+	}
 	if config.RetirementYears < 0 || config.RetirementYears > 100 {
 		return fmt.Errorf("默认退休年数必须在 0 到 100 之间")
 	}
@@ -660,12 +679,15 @@ func validateConfig(config Config) error {
 		if config.BirthDate.After(configDateOnly(time.Now())) {
 			return fmt.Errorf("出生日期不能晚于今天")
 		}
-		if config.Sex == "female" && config.FemaleTrack != "50" && config.FemaleTrack != "55" {
-			return fmt.Errorf("女性需要配置 female_track = 50 或 55")
+		if config.Sex == "female" && config.FemaleTrack != "" && config.FemaleTrack != "50" && config.FemaleTrack != "55" {
+			return fmt.Errorf("女性 female_track 只能是 50 或 55")
 		}
 	}
 	if config.Reserve < 0 {
 		return fmt.Errorf("保留金不能小于 0")
+	}
+	if config.TargetMonthlySpend < 0 {
+		return fmt.Errorf("目标每月可花不能小于 0")
 	}
 	if config.Assets < 0 {
 		return fmt.Errorf("资产余额不能小于 0")

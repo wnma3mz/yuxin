@@ -16,7 +16,7 @@ func TestRenderShareCardOverview(t *testing.T) {
 	}
 	for _, want := range []string{
 		"概览分享卡", "演示数据", "今日入账", "下班倒计时",
-		"节假日", "预计退休", "本地资产", "无账号", "离线运行", "数据只在本地",
+		"节假日", "距离退休", "本地存款", "无账号", "离线运行", "数据只在本地",
 	} {
 		if !strings.Contains(card, want) {
 			t.Fatalf("card does not contain %q:\n%s", want, card)
@@ -45,7 +45,7 @@ func TestRenderShareCardWorkday(t *testing.T) {
 			t.Fatalf("card does not contain %q:\n%s", want, card)
 		}
 	}
-	if strings.Contains(card, "预计退休") || strings.Contains(card, "本地资产") {
+	if strings.Contains(card, "预计退休") || strings.Contains(card, "本地存款") {
 		t.Fatalf("workday card should stay focused:\n%s", card)
 	}
 	assertShareCardWidth(t, card)
@@ -65,8 +65,22 @@ func TestRenderShareCardHonorsPrivacySettings(t *testing.T) {
 	if strings.Contains(card, "¥") || strings.Contains(card, "2056") {
 		t.Fatalf("privacy card leaked sensitive values:\n%s", card)
 	}
-	if count := strings.Count(card, "已隐藏"); count < 4 {
+	if count := strings.Count(card, "已隐藏"); count < 3 {
 		t.Fatalf("expected hidden salary, retirement date, and assets; got %d:\n%s", count, card)
+	}
+}
+
+func TestShareCardUsesWorkStateCountdownLabel(t *testing.T) {
+	config := defaultConfig()
+	before := DashboardSnapshot{Salary: SalarySnapshot{Status: "before-work", RemainingSeconds: 3600}}
+	card, err := RenderShareCard(before, config, "overview")
+	if err != nil || !strings.Contains(card, "上班倒计时") || strings.Contains(card, "下班倒计时") {
+		t.Fatalf("before-work share countdown is inconsistent: %v\n%s", err, card)
+	}
+	after := DashboardSnapshot{Salary: SalarySnapshot{Status: "after-work"}}
+	card, err = RenderShareCard(after, config, "overview")
+	if err != nil || !strings.Contains(card, "工作状态") || !strings.Contains(card, "已经下班") {
+		t.Fatalf("after-work share status is inconsistent: %v\n%s", err, card)
 	}
 }
 

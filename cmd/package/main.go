@@ -111,11 +111,6 @@ func createArchive(archivePath, base, platform, executable string) error {
 			return err
 		}
 	}
-	for _, entry := range desktopLaunchers(platform) {
-		if err := writeArchiveEntry(writer, base+"/"+entry.name, []byte(entry.content), entry.mode); err != nil {
-			return err
-		}
-	}
 	if err := writer.Close(); err != nil {
 		return err
 	}
@@ -124,12 +119,6 @@ func createArchive(archivePath, base, platform, executable string) error {
 	}
 	closed = true
 	return nil
-}
-
-type generatedEntry struct {
-	name    string
-	content string
-	mode    os.FileMode
 }
 
 func writeArchiveEntry(writer *zip.Writer, name string, content []byte, mode os.FileMode) error {
@@ -145,44 +134,3 @@ func writeArchiveEntry(writer *zip.Writer, name string, content []byte, mode os.
 	_, err = destination.Write(content)
 	return err
 }
-
-func desktopLaunchers(platform string) []generatedEntry {
-	switch {
-	case strings.HasPrefix(platform, "macos-"):
-		return []generatedEntry{
-			{name: "Open-Yuxin.app/Contents/Info.plist", mode: 0o644, content: macOSLauncherPlist},
-			{name: "Open-Yuxin.app/Contents/MacOS/Open-Yuxin", mode: 0o755, content: "#!/bin/sh\nroot=$(CDPATH= cd \"$(dirname \"$0\")/../../..\" && pwd)\nexec \"$root/yuxin\" web\n"},
-		}
-	case strings.HasPrefix(platform, "windows-"):
-		return []generatedEntry{{name: "Open-Yuxin.vbs", mode: 0o644, content: `Set shell = CreateObject("WScript.Shell")
-Set files = CreateObject("Scripting.FileSystemObject")
-folder = files.GetParentFolderName(WScript.ScriptFullName)
-shell.Run Chr(34) & folder & "\yuxin.exe" & Chr(34) & " web", 0, False
-`}}
-	case strings.HasPrefix(platform, "linux-"):
-		return []generatedEntry{{name: "Open-Yuxin.desktop", mode: 0o755, content: linuxLauncherDesktop}}
-	default:
-		return nil
-	}
-}
-
-const linuxLauncherDesktop = `[Desktop Entry]
-Type=Application
-Name=Yuxin
-Comment=Open the local Yuxin dashboard
-Exec=sh -c "entry=\\$1; [ -n \\"\\$entry\\" ] || entry=\\$GIO_LAUNCHED_DESKTOP_FILE; [ -n \\"\\$entry\\" ] || entry=\\$PWD/Open-Yuxin.desktop; case \\"\\$entry\\" in file://*) entry=\\${entry#file://} ;; esac; cd \\"\\$(dirname \\"\\$entry\\")\\" && exec ./yuxin web" sh %k
-Terminal=false
-Categories=Utility;
-`
-
-const macOSLauncherPlist = `<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-<key>CFBundleDisplayName</key><string>Yuxin</string>
-<key>CFBundleExecutable</key><string>Open-Yuxin</string>
-<key>CFBundleIdentifier</key><string>com.wnma3mz.yuxin.launcher</string>
-<key>CFBundleName</key><string>Yuxin</string>
-<key>CFBundlePackageType</key><string>APPL</string>
-<key>CFBundleVersion</key><string>1</string>
-</dict></plist>
-`

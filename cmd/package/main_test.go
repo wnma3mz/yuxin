@@ -3,7 +3,6 @@ package main
 import (
 	"archive/zip"
 	"bytes"
-	"encoding/xml"
 	"os"
 	"path/filepath"
 	"strings"
@@ -27,7 +26,7 @@ func TestCreateArchiveIncludesRunnableBinaryAndLocalData(t *testing.T) {
 	defer archive.Close()
 	want := map[string]bool{
 		"yuxin.exe": false, "yuxin.toml": false, "holidays-2026.json": false,
-		"README.md": false, "LICENSE": false, "Open-Yuxin.vbs": false,
+		"README.md": false, "LICENSE": false,
 	}
 	for _, entry := range archive.File {
 		want[filepath.Base(entry.Name)] = true
@@ -40,48 +39,6 @@ func TestCreateArchiveIncludesRunnableBinaryAndLocalData(t *testing.T) {
 			t.Errorf("archive is missing %s", name)
 		}
 	}
-}
-
-func TestDesktopLaunchersMatchPlatforms(t *testing.T) {
-	mac := launcherByName(t, "macos-arm64", "Open-Yuxin.app/Contents/MacOS/Open-Yuxin")
-	if mac.mode != 0o755 || !strings.Contains(mac.content, `exec "$root/yuxin" web`) {
-		t.Fatalf("invalid macOS launcher: %#v", mac)
-	}
-	plist := launcherByName(t, "macos-arm64", "Open-Yuxin.app/Contents/Info.plist")
-	if plist.mode != 0o644 || !strings.Contains(plist.content, "<string>Open-Yuxin</string>") {
-		t.Fatalf("invalid macOS plist: %#v", plist)
-	}
-	var document struct {
-		XMLName xml.Name
-	}
-	if err := xml.Unmarshal([]byte(plist.content), &document); err != nil || document.XMLName.Local != "plist" {
-		t.Fatalf("macOS plist is not valid XML: root=%q err=%v", document.XMLName.Local, err)
-	}
-
-	windows := launcherByName(t, "windows-x86_64", "Open-Yuxin.vbs")
-	if windows.mode != 0o644 || !strings.Contains(windows.content, `folder & "\yuxin.exe"`) || !strings.Contains(windows.content, `& " web", 0, False`) {
-		t.Fatalf("invalid Windows launcher: %#v", windows)
-	}
-
-	linux := launcherByName(t, "linux-x86_64", "Open-Yuxin.desktop")
-	if linux.mode != 0o755 || !strings.Contains(linux.content, `entry=\\$1`) || !strings.Contains(linux.content, `\\$GIO_LAUNCHED_DESKTOP_FILE`) || !strings.Contains(linux.content, `exec ./yuxin web" sh %k`) || !strings.Contains(linux.content, "Terminal=false") {
-		t.Fatalf("invalid Linux launcher: %#v", linux)
-	}
-
-	if entries := desktopLaunchers("plan9-amd64"); len(entries) != 0 {
-		t.Fatalf("unsupported launchers = %#v", entries)
-	}
-}
-
-func launcherByName(t *testing.T, platform, name string) generatedEntry {
-	t.Helper()
-	for _, entry := range desktopLaunchers(platform) {
-		if entry.name == name {
-			return entry
-		}
-	}
-	t.Fatalf("desktopLaunchers(%q) missing %q", platform, name)
-	return generatedEntry{}
 }
 
 func TestRunPackageCreatesArchiveAndChecksum(t *testing.T) {

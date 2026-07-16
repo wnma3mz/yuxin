@@ -19,6 +19,11 @@ var (
 	holiday2026Error    error
 )
 
+const (
+	averageDaysPerMonth = 30.436875
+	averageDaysPerYear  = 365.2425
+)
+
 type SalarySnapshot struct {
 	EarnedToday      float64
 	ExpectedToday    float64
@@ -79,6 +84,9 @@ type DashboardSnapshot struct {
 	LiveBalance          float64
 	SpendableAssets      float64
 	DailyUntilRetirement float64
+	SavingsTarget        float64
+	SavingsGap           float64
+	SavingsProgress      float64
 	RemainingWorkdays    int
 	RemainingSalary      float64
 	TodayCoversDays      float64
@@ -123,6 +131,10 @@ func CalculateSalary(now time.Time, config Config) SalarySnapshot {
 			}
 		}
 	}
+	remainingSeconds := max(0, spans[len(spans)-1].end-nowSecond)
+	if status == "before-work" {
+		remainingSeconds = max(0, spans[0].start-nowSecond)
+	}
 	return SalarySnapshot{
 		EarnedToday:      rate * progress,
 		ExpectedToday:    rate,
@@ -130,7 +142,7 @@ func CalculateSalary(now time.Time, config Config) SalarySnapshot {
 		HourlyRate:       hourly,
 		Progress:         progress,
 		ElapsedSeconds:   elapsedSeconds,
-		RemainingSeconds: max(0, spans[len(spans)-1].end-nowSecond),
+		RemainingSeconds: remainingSeconds,
 		Status:           status,
 	}
 }
@@ -224,16 +236,17 @@ func DemoDashboard() (DashboardSnapshot, Config, error) {
 	config.SalaryAmount = 16800
 	config.MonthlyWorkdays = 21.75
 	config.RetirementYears = 30
-	config.ProfileEnabled = true
-	config.BirthDate = mustDate("1992-08-18")
-	config.ProgressBirthDate = config.BirthDate
+	config.ProfileEnabled = false
+	config.RetirementStart = mustDate("2026-07-16")
+	config.ProgressBirthDate = mustDate("1996-07-16")
+	config.RetirementMode = "countdown"
 	config.AssetsEnabled = true
 	config.Assets = 258000
+	config.TargetMonthlySpend = 3000
 	config.AssetItems = []AssetItem{
-		{Name: "演示活期", Kind: "checking", Balance: 58000},
-		{Name: "演示定期", Kind: "deposit", Balance: 200000},
+		{Name: "演示存款", Kind: "deposit", Balance: 258000},
 	}
-	config.Reserve = 30000
+	config.Reserve = 0
 	now := time.Date(2026, time.July, 16, 15, 24, 0, 0, time.Local)
 	snapshot, err := CalculateDashboard(now, config)
 	if err != nil {
@@ -250,12 +263,12 @@ func retirementDelay(config Config) (baseAge, delay int, err error) {
 	switch {
 	case config.Sex == "male":
 		baseAge, firstYear, firstMonth, step, cap = 60, 1965, time.January, 4, 36
-	case config.Sex == "female" && config.FemaleTrack == "55":
+	case config.Sex == "female" && (config.FemaleTrack == "" || config.FemaleTrack == "55"):
 		baseAge, firstYear, firstMonth, step, cap = 55, 1970, time.January, 4, 36
 	case config.Sex == "female" && config.FemaleTrack == "50":
 		baseAge, firstYear, firstMonth, step, cap = 50, 1975, time.January, 2, 60
 	default:
-		return 0, 0, fmt.Errorf("女性退休计算需要选择原法定退休年龄 50 岁或 55 岁")
+		return 0, 0, fmt.Errorf("性别必须是男或女")
 	}
 	birthIndex := config.BirthDate.Year()*12 + int(config.BirthDate.Month()) - 1
 	startIndex := firstYear*12 + int(firstMonth) - 1
@@ -452,6 +465,9 @@ func CalculateDashboard(now time.Time, config Config) (DashboardSnapshot, error)
 	remainingWorkdays := 0
 	remainingSalary := 0.0
 	dailyBudget := 0.0
+	savingsTarget := 0.0
+	savingsGap := 0.0
+	savingsProgress := 0.0
 	covers := 0.0
 	retirementEnabled := !retirement.RetirementMonth.IsZero()
 	if retirementEnabled {
@@ -463,12 +479,20 @@ func CalculateDashboard(now time.Time, config Config) (DashboardSnapshot, error)
 		if dailyBudget > 0 {
 			covers = salary.ExpectedToday / dailyBudget
 		}
+		if config.TargetMonthlySpend > 0 {
+			savingsTarget = config.TargetMonthlySpend * float64(retirement.RemainingDays) / averageDaysPerMonth
+			if savingsTarget > 0 {
+				savingsGap = math.Max(0, savingsTarget-spendable)
+				savingsProgress = math.Max(0, math.Min(1, spendable/savingsTarget))
+			}
+		}
 	}
 	return DashboardSnapshot{
 		Now: now, Salary: salary, Retirement: retirement,
 		RetirementEnabled: retirementEnabled, AssetsEnabled: config.AssetsEnabled,
 		TotalAssets: totalAssets, LiveBalance: liveBalance, SpendableAssets: spendable,
 		DailyUntilRetirement: dailyBudget, RemainingWorkdays: remainingWorkdays,
+		SavingsTarget: savingsTarget, SavingsGap: savingsGap, SavingsProgress: savingsProgress,
 		RemainingSalary: remainingSalary, TodayCoversDays: covers,
 		Holiday: holiday, HolidayDataAvailable: calendar != nil,
 	}, nil

@@ -13,10 +13,10 @@ import (
 var ansiPattern = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 
 func RenderDashboard(snapshot DashboardSnapshot, config Config, terminalWidth int, useColor bool) string {
-	return renderDashboard(snapshot, config, terminalWidth, 0, useColor, false, false)
+	return renderDashboard(snapshot, config, terminalWidth, 0, useColor, false)
 }
 
-func renderDashboard(snapshot DashboardSnapshot, config Config, terminalWidth, terminalHeight int, useColor, details, helpVisible bool) string {
+func renderDashboard(snapshot DashboardSnapshot, config Config, terminalWidth, terminalHeight int, useColor, details bool) string {
 	width := terminalWidth
 	if width <= 0 {
 		width = 80
@@ -30,7 +30,14 @@ func renderDashboard(snapshot DashboardSnapshot, config Config, terminalWidth, t
 	inner := width - 4
 	status, statusColor := workStatus(snapshot, config)
 	nowText := snapshot.Now.Format("2006-01-02 15:04:05")
-	topLeft := "╭─ 余薪 YUXIN "
+	title := "余薪 YUXIN"
+	if snapshot.DemoMode {
+		title += " · 演示模式"
+		if width < 40 {
+			title = "YUXIN · 演示模式"
+		}
+	}
+	topLeft := "╭─ " + title + " "
 	topRight := " ─╮"
 	if width >= 40 {
 		topRight = " " + nowText + topRight
@@ -45,9 +52,16 @@ func renderDashboard(snapshot DashboardSnapshot, config Config, terminalWidth, t
 		}
 		refresh += "  " + dataLabel
 	}
-	statusWidth := inner - displayWidth(refresh) - 1
-	status = color(truncate(status, statusWidth), statusColor, useColor)
-	header := "│ " + pad(status, statusWidth, alignLeft) + " " + refresh + " │"
+	var headerContent string
+	if width >= 70 {
+		status = color(status, statusColor, useColor)
+		headerContent = threeColumns(status, config.Slogan, refresh, inner)
+	} else {
+		statusWidth := inner - displayWidth(refresh) - 1
+		status = color(truncate(status, statusWidth), statusColor, useColor)
+		headerContent = pad(status, statusWidth, alignLeft) + " " + refresh
+	}
+	header := "│ " + headerContent + " │"
 	lines := []string{top, header, "├" + strings.Repeat("─", width-2) + "┤"}
 	lines = append(lines,
 		"│"+pad("今日入账", width-2, alignCenter)+"│",
@@ -64,7 +78,7 @@ func renderDashboard(snapshot DashboardSnapshot, config Config, terminalWidth, t
 		)
 		lines = append(lines, "│ "+metrics+" │")
 	} else {
-		compact := "下班 " + duration(snapshot.Salary.RemainingSeconds) + "  预计 " + displayMoney(snapshot.Salary.ExpectedToday, config.HideAmounts)
+		compact := remainingText(snapshot.Salary) + "  预计 " + displayMoney(snapshot.Salary.ExpectedToday, config.HideAmounts)
 		lines = append(lines, "│ "+pad(truncate(compact, inner), inner, alignLeft)+" │")
 	}
 
@@ -99,31 +113,56 @@ func renderDashboard(snapshot DashboardSnapshot, config Config, terminalWidth, t
 	}
 	retirementRows := []string{}
 	if snapshot.RetirementEnabled {
-		if config.RetirementMode == "full" && !config.HideRetirementDate {
-			retirementRows = append(retirementRows, metric("预计退休", retirementDate(snapshot.Retirement), leftWidth-4))
-		}
-		retirementRows = append(retirementRows, metric("距离退休", retirementDistance(snapshot, config.RetirementUnit), leftWidth-4))
-		if config.RetirementMode == "full" && config.RetirementUnit != "workdays" {
-			retirementRows = append(retirementRows, metric("剩余工作日", commaInt(snapshot.RemainingWorkdays)+" 天", leftWidth-4))
-		}
-		if snapshot.AssetsEnabled {
-			retirementRows = append(retirementRows, metric("现在退休每天可花", displayMoney(snapshot.DailyUntilRetirement, config.HideAmounts), leftWidth-4))
-		}
-		if config.RetirementMode == "full" {
-			retirementRows = append(retirementRows, retirementProgress(snapshot.Retirement.Progress, leftWidth-4, useColor))
+		if config.HideRetirementDate {
+			retirementRows = append(retirementRows, metric("退休信息", "已隐藏", leftWidth-4))
+		} else {
+			days := max(0, snapshot.Retirement.RemainingDays)
+			retirementRows = append(retirementRows,
+				retirementProgress(snapshot.Retirement.Progress, leftWidth-4, useColor),
+				metric("距离退休还有", fmt.Sprintf("%d 年", int(float64(days)/averageDaysPerYear)), leftWidth-4),
+				metric("距离退休还有", fmt.Sprintf("%d 个月", int(float64(days)/averageDaysPerMonth)), leftWidth-4),
+				metric("距离退休还有", commaInt(days)+" 天", leftWidth-4),
+			)
 		}
 	}
 	assetRows := []string{}
 	if snapshot.AssetsEnabled {
 		assetRows = append(assetRows,
-			metric("配置余额", displayMoney(snapshot.TotalAssets, config.HideAmounts), rightWidth-4),
-			metric("今日工资", "+"+displayMoney(snapshot.Salary.EarnedToday, config.HideAmounts), rightWidth-4),
-			metric("实时余额", displayMoney(snapshot.LiveBalance, config.HideAmounts), rightWidth-4),
-			metric("应急保留金", displayMoney(config.Reserve, config.HideAmounts), rightWidth-4),
-			metric("可支配余额", displayMoney(snapshot.SpendableAssets, config.HideAmounts), rightWidth-4),
+			metric("实时存款余额", displayMoney(snapshot.LiveBalance, config.HideAmounts), rightWidth-4),
 		)
+		if snapshot.RetirementEnabled && snapshot.Retirement.RemainingDays > 0 {
+			assetRows = append(assetRows,
+				metric("现在退休每天可花", displayMoney(snapshot.DailyUntilRetirement, config.HideAmounts), rightWidth-4),
+				metric("现在退休每月可花", displayMoney(snapshot.DailyUntilRetirement*averageDaysPerMonth, config.HideAmounts), rightWidth-4),
+				metric("现在退休每年可花", displayMoney(snapshot.DailyUntilRetirement*averageDaysPerYear, config.HideAmounts), rightWidth-4),
+			)
+		}
 	}
-	showPanels := !details && !helpVisible
+	goalRows := []string{}
+	if snapshot.SavingsTarget > 0 {
+		goalRows = append(goalRows, threeColumns(
+			"每天 "+displayMoney(config.TargetMonthlySpend/averageDaysPerMonth, config.HideAmounts),
+			"每月 "+displayMoney(config.TargetMonthlySpend, config.HideAmounts),
+			"每年 "+displayMoney(config.TargetMonthlySpend*12, config.HideAmounts),
+			width-4,
+		))
+		if config.HideAmounts {
+			goalRows = append(goalRows,
+				metric("目标进度", "已隐藏", width-4),
+				metric("距离目标还差", displayMoney(snapshot.SavingsGap, true), width-4),
+			)
+		} else {
+			gap := displayMoney(snapshot.SavingsGap, false)
+			if snapshot.SavingsGap <= 0 {
+				gap = "已达成"
+			}
+			goalRows = append(goalRows,
+				savingsTargetProgress(snapshot.SavingsProgress, width-4, useColor),
+				metric("距离目标还差", gap, width-4),
+			)
+		}
+	}
+	showPanels := !details
 	fullPanelHeight := 0
 	if sideBySide {
 		fullPanelHeight = max(len(retirementRows), len(assetRows)) + 2
@@ -135,18 +174,32 @@ func renderDashboard(snapshot DashboardSnapshot, config Config, terminalWidth, t
 			fullPanelHeight += len(assetRows) + 2
 		}
 	}
+	if len(goalRows) > 0 {
+		fullPanelHeight += len(goalRows) + 2
+	}
 	compactLayout := width < 70 || (terminalHeight > 0 && (terminalHeight < 24 || len(lines)+fullPanelHeight+1 > terminalHeight))
 	if showPanels && compactLayout {
 		compactRows := []string{}
 		if snapshot.RetirementEnabled {
-			text := "退休还有 " + retirementDistance(snapshot, config.RetirementUnit)
-			if config.RetirementMode == "full" && !config.HideRetirementDate {
-				text = "退休 " + snapshot.Retirement.RetirementMonth.Format("2006-01") + " · " + retirementDistance(snapshot, config.RetirementUnit)
+			text := "退休信息 已隐藏"
+			if !config.HideRetirementDate {
+				text = "退休还有 " + retirementDistance(snapshot)
 			}
 			compactRows = append(compactRows, text)
 		}
-		if snapshot.RetirementEnabled && snapshot.AssetsEnabled {
-			compactRows = append(compactRows, "现在退休每天可花 "+displayMoney(snapshot.DailyUntilRetirement, config.HideAmounts))
+		if snapshot.AssetsEnabled {
+			text := "实时存款余额 " + displayMoney(snapshot.LiveBalance, config.HideAmounts)
+			if snapshot.RetirementEnabled && snapshot.Retirement.RemainingDays > 0 {
+				text += " · 退休日可花 " + displayMoney(snapshot.DailyUntilRetirement, config.HideAmounts)
+			}
+			compactRows = append(compactRows, text)
+			if snapshot.SavingsTarget > 0 {
+				target := "存款目标 已隐藏"
+				if !config.HideAmounts {
+					target = fmt.Sprintf("存款目标 %.0f%% · 还差 %s", snapshot.SavingsProgress*100, displayMoney(snapshot.SavingsGap, false))
+				}
+				compactRows = append(compactRows, target)
+			}
 		}
 		if len(compactRows) > 0 {
 			lines = append(lines, panel("未来", compactRows, width)...)
@@ -154,33 +207,35 @@ func renderDashboard(snapshot DashboardSnapshot, config Config, terminalWidth, t
 	} else if showPanels && sideBySide {
 		lines = append(lines, joinPanels(
 			panel("退休倒计时", retirementRows, leftWidth),
-			panel("资产续航", assetRows, rightWidth),
+			panel("存款", assetRows, rightWidth),
 		)...)
+		if len(goalRows) > 0 {
+			lines = append(lines, panel("存款目标", goalRows, width)...)
+		}
 	} else if showPanels {
 		if snapshot.RetirementEnabled {
 			lines = append(lines, panel("退休倒计时", retirementRows, width)...)
 		}
 		if snapshot.AssetsEnabled {
-			lines = append(lines, panel("资产续航", assetRows, width)...)
+			lines = append(lines, panel("存款", assetRows, width)...)
+		}
+		if len(goalRows) > 0 {
+			lines = append(lines, panel("存款目标", goalRows, width)...)
 		}
 	}
 	if details {
 		lines = append(lines, panel("计算口径", []string{
 			fmt.Sprintf("时薪 %s · 日薪 %s", displayMoney(snapshot.Salary.HourlyRate, config.HideAmounts), displayMoney(snapshot.Salary.DailyRate, config.HideAmounts)),
-			"退休天数口径：距离预计退休月第一天；工作日口径使用随包节假日数据。",
+			"退休天数口径：距离预计退休月第一天。",
+			"退休年、月为剩余天数按 365.2425 天和 30.436875 天向下取整。",
 			"退休进度统一按 18 岁起计，不需要收集参加工作时间。",
-			"今日工资与实时余额按秒更新；未来口径不含个税、奖金、利息、通胀和养老金。",
+			"存款目标：目标月支出 × 距退休天数 ÷ 30.436875，不含收益率和通胀。",
+			"今日入账按秒更新；未来口径不含个税、奖金、利息、通胀和养老金。",
 		}, width)...)
 	}
-	if helpVisible {
-		lines = append(lines, panel("快捷键", []string{
-			"e 编辑配置   r 立即刷新   s 隐私演示",
-			"u 退休单位   d 计算口径   ? 帮助   q 退出",
-		}, width)...)
-	}
-	footer := "[e] 配置  [r] 刷新  [s] 演示  [u] 单位  [d] 详情  [?] 帮助  [q] 退出"
+	footer := "[e] 配置  [p] 隐私  [r] 刷新  [v] 视图  [q] 退出"
 	if width < 70 {
-		footer = "[e] 配置  [s] 演示  [q] 退出"
+		footer = "[e] 配置  [p] 隐私  [v] 视图  [q] 退出"
 	}
 	lines = append(lines, pad(truncate(footer, width), width, alignCenter))
 	return strings.Join(lines, "\n")
@@ -189,17 +244,31 @@ func renderDashboard(snapshot DashboardSnapshot, config Config, terminalWidth, t
 func renderTiny(snapshot DashboardSnapshot, config Config, width int) string {
 	title := "余薪 YUXIN"
 	if snapshot.DemoMode {
-		title += " · 演示"
+		title += " · 演示模式"
 	}
 	lines := []string{
 		title,
 		displayMoney(snapshot.Salary.EarnedToday, config.HideAmounts),
 		remainingText(snapshot.Salary),
 	}
+	if snapshot.AssetsEnabled {
+		lines = append(lines, "实时存款余额 "+displayMoney(snapshot.LiveBalance, config.HideAmounts))
+	}
 	if snapshot.RetirementEnabled {
-		lines = append(lines, "退休还有 "+retirementDistance(snapshot, config.RetirementUnit))
+		if config.HideRetirementDate {
+			lines = append(lines, "退休信息 已隐藏")
+		} else {
+			lines = append(lines, "退休还有 "+retirementDistance(snapshot))
+		}
 		if snapshot.AssetsEnabled {
-			lines = append(lines, "每天可花 "+displayMoney(snapshot.DailyUntilRetirement, config.HideAmounts))
+			lines = append(lines, "现在退休每天可花 "+displayMoney(snapshot.DailyUntilRetirement, config.HideAmounts))
+		}
+	}
+	if snapshot.SavingsTarget > 0 {
+		if config.HideAmounts {
+			lines = append(lines, "存款目标 已隐藏")
+		} else {
+			lines = append(lines, fmt.Sprintf("存款目标 %.0f%% 还差%s", snapshot.SavingsProgress*100, displayMoney(snapshot.SavingsGap, false)))
 		}
 	}
 	if snapshot.Holiday != nil {
@@ -234,21 +303,40 @@ func displayMoney(value float64, hidden bool) string {
 	return money(value)
 }
 
-func retirementDistance(snapshot DashboardSnapshot, unit string) string {
-	switch unit {
-	case "years":
-		return fmt.Sprintf("%.1f 年", float64(snapshot.Retirement.RemainingDays)/365.2425)
-	case "months":
-		return fmt.Sprintf("%.1f 个月", float64(snapshot.Retirement.RemainingDays)/30.436875)
-	case "workdays":
-		return commaInt(snapshot.RemainingWorkdays) + " 个工作日"
-	default:
-		return commaInt(snapshot.Retirement.RemainingDays) + " 天"
+func retirementDistance(snapshot DashboardSnapshot) string {
+	start := normalizedDate(snapshot.Now)
+	end := normalizedDate(snapshot.Retirement.RetirementMonth)
+	if !end.After(start) {
+		return "0 年 0 个月 0 天"
 	}
+	years := end.Year() - start.Year()
+	cursor := start.AddDate(years, 0, 0)
+	if cursor.After(end) {
+		years--
+		cursor = start.AddDate(years, 0, 0)
+	}
+	months := (end.Year()-cursor.Year())*12 + int(end.Month()-cursor.Month())
+	monthCursor := cursor.AddDate(0, months, 0)
+	if monthCursor.After(end) {
+		months--
+		monthCursor = cursor.AddDate(0, months, 0)
+	}
+	days := max(0, daysBetween(monthCursor, end))
+	return fmt.Sprintf("%d 年 %d 个月 %d 天", years, months, days)
 }
 
 func remainingText(salary SalarySnapshot) string {
-	if salary.RemainingSeconds > 0 {
+	switch salary.Status {
+	case "before-work":
+		if salary.RemainingSeconds > 0 {
+			return "距离上班 " + duration(salary.RemainingSeconds)
+		}
+	case "working", "lunch-break":
+		if salary.RemainingSeconds > 0 {
+			return "距离下班 " + duration(salary.RemainingSeconds)
+		}
+	}
+	if salary.RemainingSeconds > 0 && salary.Status == "" {
 		return "距离下班 " + duration(salary.RemainingSeconds)
 	}
 	status, _ := statusText(salary.Status)
@@ -264,7 +352,7 @@ func statusText(status string) (string, string) {
 	case "lunch-break":
 		return "◐ 午休中", "33"
 	case "after-work":
-		return "✓ 今日下班", "36"
+		return "✓ 已经下班", "36"
 	case "rest-day":
 		return "○ 今日休息", "90"
 	default:
@@ -274,7 +362,13 @@ func statusText(status string) (string, string) {
 
 func workStatus(snapshot DashboardSnapshot, config Config) (string, string) {
 	status, statusColor := statusText(snapshot.Salary.Status)
-	if snapshot.Salary.Status != "working" {
+	switch snapshot.Salary.Status {
+	case "before-work":
+		return status + "（摸鱼先热身）", statusColor
+	case "after-work":
+		return status + "（快乐已到账）", statusColor
+	case "working":
+	default:
 		return status, statusColor
 	}
 	message := ""
@@ -310,12 +404,7 @@ func holidayLines(holiday HolidaySnapshot, now time.Time, width int, useColor, s
 	today := color("◆", "1;33", useColor)
 	remaining := color(strings.Repeat("─", barWidth-marker-1), "90", useColor)
 	timeline := left + " " + color("●", "36", useColor) + passed + today + remaining + color("○", "90", useColor) + " " + right
-	note := fmt.Sprintf(
-		"今天 %.1f%% · 已过 %d 天 / 还剩 %d 天",
-		progress*100,
-		holiday.DaysSincePrevious,
-		holiday.DaysUntil,
-	)
+	note := fmt.Sprintf("已过 %d 天 · 还剩 %d 天", holiday.DaysSincePrevious, holiday.DaysUntil)
 	return []string{timeline, pad(note, width, alignCenter)}
 }
 
@@ -346,6 +435,13 @@ func retirementProgress(progress float64, width int, useColor bool) string {
 	return label + " " + progressBar(progress, barWidth, useColor) + " " + percent
 }
 
+func savingsTargetProgress(progress float64, width int, useColor bool) string {
+	const label = "目标进度"
+	percent := fmt.Sprintf("%.0f%%", clampFloat(progress, 0, 1)*100)
+	barWidth := max(4, width-displayWidth(label)-displayWidth(percent)-2)
+	return label + " " + progressBar(progress, barWidth, useColor) + " " + percent
+}
+
 func panel(title string, rows []string, width int) []string {
 	titleText := " " + title + " "
 	top := "╭─" + titleText + strings.Repeat("─", max(0, width-3-displayWidth(titleText))) + "╮"
@@ -358,6 +454,8 @@ func panel(title string, rows []string, width int) []string {
 
 func joinPanels(left, right []string) []string {
 	height := max(len(left), len(right))
+	left = extendPanel(left, height)
+	right = extendPanel(right, height)
 	leftWidth := 0
 	for _, line := range left {
 		leftWidth = max(leftWidth, displayWidth(line))
@@ -375,6 +473,18 @@ func joinPanels(left, right []string) []string {
 		result = append(result, pad(leftLine, leftWidth, alignLeft)+" "+rightLine)
 	}
 	return result
+}
+
+func extendPanel(lines []string, height int) []string {
+	if len(lines) < 2 || len(lines) >= height {
+		return lines
+	}
+	width := displayWidth(lines[0])
+	result := append([]string{}, lines[:len(lines)-1]...)
+	for len(result) < height-1 {
+		result = append(result, "│"+strings.Repeat(" ", max(0, width-2))+"│")
+	}
+	return append(result, lines[len(lines)-1])
 }
 
 func metric(label, value string, width int) string {

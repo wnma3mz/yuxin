@@ -22,6 +22,14 @@ func TestSalaryUsesEffectiveWorkTime(t *testing.T) {
 	if lunch.Status != "lunch-break" || lunch.EarnedToday != 375 {
 		t.Fatalf("lunch should freeze earnings: %+v", lunch)
 	}
+	before := CalculateSalary(testDate("2026-07-16 08:00:00"), config)
+	if before.Status != "before-work" || before.RemainingSeconds != 3600 {
+		t.Fatalf("before-work countdown = %+v", before)
+	}
+	after := CalculateSalary(testDate("2026-07-16 19:00:00"), config)
+	if after.Status != "after-work" || after.RemainingSeconds != 0 {
+		t.Fatalf("after-work countdown = %+v", after)
+	}
 }
 
 func TestSalaryModesAndHolidayState(t *testing.T) {
@@ -66,6 +74,7 @@ func TestRetirementTracks(t *testing.T) {
 		{"male first", "1965-01-20", "male", "", "2025-02-01", "60 岁 1 个月", 1},
 		{"male cap", "1990-01-01", "male", "", "2053-01-01", "63 岁", 36},
 		{"female 55", "1970-01-01", "female", "55", "2025-02-01", "55 岁 1 个月", 1},
+		{"female default", "1970-01-01", "female", "", "2025-02-01", "55 岁 1 个月", 1},
 		{"female 50", "1975-02-01", "female", "50", "2025-03-01", "50 岁 1 个月", 1},
 	}
 	for _, tt := range tests {
@@ -104,11 +113,17 @@ func TestDemoDashboardUsesFixedSyntheticData(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !snapshot.DemoMode || config.SalaryAmount != 16800 || config.Assets != 258000 || config.BirthDate.Format("2006-01-02") != "1992-08-18" {
+	if !snapshot.DemoMode || config.SalaryAmount != 16800 || config.Assets != 258000 || config.TargetMonthlySpend != 3000 || config.ProfileEnabled || config.RetirementYears != 30 {
 		t.Fatalf("unexpected demo data: %+v, %+v", snapshot, config)
+	}
+	if len(config.AssetItems) != 1 || config.AssetItems[0].Name != "演示存款" {
+		t.Fatalf("unexpected demo deposit: %#v", config.AssetItems)
 	}
 	if snapshot.Now.Format("2006-01-02 15:04") != "2026-07-16 15:24" {
 		t.Fatalf("demo time = %s", snapshot.Now)
+	}
+	if snapshot.Retirement.Progress < .28 || snapshot.Retirement.Progress > .29 {
+		t.Fatalf("demo retirement progress = %v", snapshot.Retirement.Progress)
 	}
 }
 
@@ -137,6 +152,30 @@ func TestDashboardCombinesAssetsAndRemainingWork(t *testing.T) {
 	}
 	if result.LiveBalance != 320250 || result.SpendableAssets != 300250 || result.DailyUntilRetirement <= 0 || result.RemainingWorkdays <= 0 || result.RemainingSalary <= 0 {
 		t.Fatalf("unexpected dashboard: %+v", result)
+	}
+}
+
+func TestDashboardCalculatesSavingsTargetToRetirement(t *testing.T) {
+	config := testFullConfig()
+	config.Assets = 100000
+	config.AssetItems = []AssetItem{{Name: "存款", Kind: "deposit", Balance: 100000}}
+	config.TargetMonthlySpend = 3000
+	result, err := CalculateDashboard(testDate("2026-07-16 00:00:00"), config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantTarget := 3000 * float64(result.Retirement.RemainingDays) / averageDaysPerMonth
+	if math.Abs(result.SavingsTarget-wantTarget) > 1e-9 || math.Abs(result.SavingsGap-(wantTarget-result.SpendableAssets)) > 1e-9 {
+		t.Fatalf("savings target = target %.2f, gap %.2f, snapshot %+v", result.SavingsTarget, result.SavingsGap, result)
+	}
+	if result.SavingsProgress <= 0 || result.SavingsProgress >= 1 {
+		t.Fatalf("savings progress = %v", result.SavingsProgress)
+	}
+
+	config.Assets = wantTarget + 1
+	result, err = CalculateDashboard(testDate("2026-07-16 00:00:00"), config)
+	if err != nil || result.SavingsGap != 0 || result.SavingsProgress != 1 {
+		t.Fatalf("completed target = %+v, %v", result, err)
 	}
 }
 
