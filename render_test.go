@@ -121,6 +121,34 @@ func TestFormattingHelpers(t *testing.T) {
 	}
 }
 
+func TestStatusAndFormattingVariants(t *testing.T) {
+	for status, expected := range map[string]string{
+		"working": "正在上班", "before-work": "尚未上班", "lunch-break": "午休中",
+		"after-work": "今日下班", "rest-day": "今日休息", "custom": "custom",
+	} {
+		text, _ := statusText(status)
+		if !strings.Contains(text, expected) {
+			t.Errorf("statusText(%q) = %q", status, text)
+		}
+	}
+	for status, expected := range map[string]string{
+		"working": "/ 秒", "lunch-break": "午休", "after-work": "结算",
+		"before-work": "等待", "rest-day": "休息",
+	} {
+		if got := incomeHint(SalarySnapshot{Status: status, HourlyRate: 36}); !strings.Contains(got, expected) {
+			t.Errorf("incomeHint(%q) = %q", status, got)
+		}
+	}
+	for seconds, expected := range map[int]string{0: "0s", 59: "59s", 60: "1m 00s", 3600: "1h 00m", 90061: "25h 01m"} {
+		if got := duration(seconds); got != expected {
+			t.Errorf("duration(%d) = %q, want %q", seconds, got, expected)
+		}
+	}
+	if money(-1.999) != "-¥2.00" || money(999.999) != "¥1,000.00" {
+		t.Fatal("money rounding variants failed")
+	}
+}
+
 func TestWorkSloganAndHolidayTimeline(t *testing.T) {
 	config := defaultConfig()
 	now := time.Date(2026, time.July, 16, 15, 0, 0, 0, time.Local)
@@ -137,7 +165,7 @@ func TestWorkSloganAndHolidayTimeline(t *testing.T) {
 }
 
 func TestResponsiveDashboardLayout(t *testing.T) {
-	config := defaultConfig()
+	config := testFullConfig()
 	now := time.Date(2026, time.July, 16, 15, 0, 0, 0, time.Local)
 	snapshot, err := CalculateDashboard(now, config)
 	if err != nil {
@@ -188,13 +216,26 @@ func TestDashboardDetailsAndHelpAreInteractiveViews(t *testing.T) {
 		t.Fatalf("unexpected details view:\n%s", details)
 	}
 	help := renderDashboard(snapshot, config, 80, 24, false, false, true)
-	if !strings.Contains(help, "快捷键") || !strings.Contains(help, "q 退出") {
+	if !strings.Contains(help, "快捷键") || !strings.Contains(help, "s 隐私演示") || !strings.Contains(help, "q 退出") {
 		t.Fatalf("unexpected help view:\n%s", help)
 	}
 }
 
+func TestDemoDashboardIsClearlyMarked(t *testing.T) {
+	snapshot, config, err := DemoDashboard()
+	if err != nil {
+		t.Fatal(err)
+	}
+	output := RenderDashboard(snapshot, config, 80, false)
+	for _, expected := range []string{"演示数据 ✓", "¥258,000.00", "退休进度（18岁起）"} {
+		if !strings.Contains(output, expected) {
+			t.Errorf("demo output does not contain %q", expected)
+		}
+	}
+}
+
 func TestShortTerminalUsesCompactPanels(t *testing.T) {
-	config := defaultConfig()
+	config := testFullConfig()
 	snapshot, err := CalculateDashboard(time.Date(2026, time.July, 16, 15, 0, 0, 0, time.Local), config)
 	if err != nil {
 		t.Fatal(err)
@@ -206,7 +247,7 @@ func TestShortTerminalUsesCompactPanels(t *testing.T) {
 }
 
 func TestStandard80By24TerminalDoesNotOverflow(t *testing.T) {
-	config := defaultConfig()
+	config := testFullConfig()
 	snapshot, err := CalculateDashboard(time.Date(2026, time.July, 16, 15, 0, 0, 0, time.Local), config)
 	if err != nil {
 		t.Fatal(err)

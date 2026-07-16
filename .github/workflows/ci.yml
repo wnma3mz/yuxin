@@ -13,18 +13,40 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
-          cache: true
+          cache: false
       - name: Format
         run: test -z "$(gofmt -l .)"
       - name: Test
-        run: go test ./...
+        run: go test ./... -coverprofile=coverage.out
+      - name: Coverage
+        shell: bash
+        run: |
+          go tool cover -func=coverage.out
+          coverage="$(go tool cover -func=coverage.out | awk '/^total:/ {gsub("%", "", $3); print $3}')"
+          awk -v coverage="$coverage" 'BEGIN {if (coverage + 0 < 70) exit 1}'
       - name: Vet
         run: go vet ./...
       - name: Build
         run: go build -trimpath -ldflags="-s -w -buildid=" -o yuxin .
       - name: Smoke test
         run: ./yuxin --version
+
+  installer-syntax:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            command: sh -n scripts/install.sh
+          - os: windows-latest
+            command: >-
+              pwsh -NoProfile -Command
+              "[scriptblock]::Create((Get-Content -Raw scripts/install.ps1)) | Out-Null"
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Validate installer syntax
+        run: ${{ matrix.command }}

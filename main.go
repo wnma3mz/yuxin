@@ -46,6 +46,13 @@ func run(args []string, stdin, stdout, stderr *os.File) int {
 		fmt.Fprintln(stdout, usage)
 		return 0
 	}
+	if opts.command == "update" {
+		if err := runUpdate(stdout); err != nil {
+			fmt.Fprintf(stderr, "更新失败：%v\n", err)
+			return 1
+		}
+		return 0
+	}
 
 	path, explicit, err := resolveConfigPath(opts)
 	if err != nil {
@@ -134,7 +141,7 @@ func parseArgs(args []string) (cliOptions, error) {
 				return opts, err
 			}
 			opts.interval, opts.hasInterval = interval, true
-		case arg == "once" || arg == "doctor" || arg == "config":
+		case arg == "once" || arg == "doctor" || arg == "config" || arg == "update":
 			if opts.command != "" {
 				return opts, fmt.Errorf("只能指定一个命令")
 			}
@@ -208,7 +215,7 @@ func runDoctor(stdout, stdin *os.File, config Config, path, source string) int {
 		fmt.Fprintf(stdout, "配置: %s  ✓\n", source)
 	}
 	fmt.Fprintf(stdout, "刷新间隔: %s  ✓\n", formatInterval(config.RefreshInterval))
-	fmt.Fprintln(stdout, "数据访问: 本地配置，无网络请求 ✓")
+	fmt.Fprintln(stdout, "仪表盘数据: 本地配置，无网络请求 ✓")
 	return 0
 }
 
@@ -258,13 +265,18 @@ func runDashboardSession(stdin, stdout, stderr *os.File, config Config) (string,
 
 	details := false
 	helpVisible := false
+	demoMode := false
 	draw := func() error {
 		color := os.Getenv("NO_COLOR") == ""
-		snapshot, err := CalculateDashboard(time.Now(), config)
+		renderConfig := config
+		snapshot, err := CalculateDashboard(time.Now(), renderConfig)
+		if demoMode {
+			snapshot, renderConfig, err = DemoDashboard()
+		}
 		if err != nil {
 			return err
 		}
-		frame := renderDashboard(snapshot, config, terminalWidth(), terminalHeight(), color, details, helpVisible)
+		frame := renderDashboard(snapshot, renderConfig, terminalWidth(), terminalHeight(), color, details, helpVisible)
 		fmt.Fprintf(stdout, "\x1b[H\x1b[2J%s", frame)
 		return nil
 	}
@@ -311,6 +323,10 @@ func runDashboardSession(stdin, stdout, stderr *os.File, config Config) (string,
 			case 'e', 'E':
 				return "edit", 0
 			case 'r', 'R':
+			case 's', 'S':
+				demoMode = !demoMode
+				details = false
+				helpVisible = false
 			case 'd', 'D':
 				details = !details
 				helpVisible = false
@@ -357,7 +373,13 @@ func formatInterval(interval time.Duration) string {
 	return strconv.FormatFloat(seconds, 'f', -1, 64) + "s"
 }
 
-const usage = `用法：yuxin [once|config|doctor] [选项]
+const usage = `用法：yuxin [once|config|doctor|update] [选项]
+
+命令：
+  once                输出一次仪表盘快照
+  config              修改本地配置
+  doctor              检查运行环境和配置
+  update              安装 GitHub 上的最新正式版
 
 选项：
   --config PATH       使用指定 TOML 配置

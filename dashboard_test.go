@@ -24,6 +24,28 @@ func TestSalaryUsesEffectiveWorkTime(t *testing.T) {
 	}
 }
 
+func TestSalaryModesAndHolidayState(t *testing.T) {
+	config := testFullConfig()
+	if got := dailyRate(config, 8*3600); got != config.SalaryAmount/config.MonthlyWorkdays {
+		t.Fatalf("monthly daily rate = %v", got)
+	}
+	config.SalaryMode = "daily"
+	if got := dailyRate(config, 8*3600); got != config.SalaryAmount {
+		t.Fatalf("daily rate = %v", got)
+	}
+	config.SalaryMode = "hourly"
+	if got := dailyRate(config, 8*3600); got != config.SalaryAmount*8 {
+		t.Fatalf("hourly daily rate = %v", got)
+	}
+	config.SalaryMode = "invalid"
+	if got := dailyRate(config, 8*3600); got != 0 {
+		t.Fatalf("invalid daily rate = %v", got)
+	}
+	if !(HolidaySnapshot{DaysUntil: 0}).IsActive() || (HolidaySnapshot{DaysUntil: 1}).IsActive() {
+		t.Fatal("holiday active state is incorrect")
+	}
+}
+
 func TestHolidayAndMakeupDayAffectSalary(t *testing.T) {
 	config := defaultConfig()
 	holiday := CalculateSalary(testDate("2026-10-01 11:00:00"), config)
@@ -62,6 +84,34 @@ func TestRetirementTracks(t *testing.T) {
 	}
 }
 
+func TestRetirementProgressStartsAtAge18(t *testing.T) {
+	config := defaultConfig()
+	config.BirthDate, _ = time.Parse("2006-01-02", "1990-01-01")
+	now := testDate("2026-01-01 00:00:00")
+	result, err := CalculateRetirement(config, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	start := testDate("2008-01-01 00:00:00")
+	want := float64(daysBetween(start, now)) / float64(daysBetween(start, result.RetirementMonth))
+	if math.Abs(result.Progress-want) > 1e-12 {
+		t.Fatalf("retirement progress = %v, want %v", result.Progress, want)
+	}
+}
+
+func TestDemoDashboardUsesFixedSyntheticData(t *testing.T) {
+	snapshot, config, err := DemoDashboard()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !snapshot.DemoMode || config.SalaryAmount != 16800 || config.Assets != 258000 || config.BirthDate.Format("2006-01-02") != "1992-08-18" {
+		t.Fatalf("unexpected demo data: %+v, %+v", snapshot, config)
+	}
+	if snapshot.Now.Format("2006-01-02 15:04") != "2026-07-16 15:24" {
+		t.Fatalf("demo time = %s", snapshot.Now)
+	}
+}
+
 func TestBundledHolidayProgress(t *testing.T) {
 	holiday, err := NextHoliday(testDate("2026-07-16 11:00:00"))
 	if err != nil {
@@ -76,7 +126,7 @@ func TestBundledHolidayProgress(t *testing.T) {
 }
 
 func TestDashboardCombinesAssetsAndRemainingWork(t *testing.T) {
-	config := defaultConfig()
+	config := testFullConfig()
 	config.SalaryAmount = 22000
 	config.Assets = 320000
 	config.Reserve = 20000
@@ -91,7 +141,7 @@ func TestDashboardCombinesAssetsAndRemainingWork(t *testing.T) {
 }
 
 func TestHourlyRemainingSalaryUsesEffectiveHours(t *testing.T) {
-	config := defaultConfig()
+	config := testFullConfig()
 	config.SalaryMode = "hourly"
 	config.SalaryAmount = 100
 	config.Workdays = map[time.Weekday]bool{time.Tuesday: true}
@@ -107,7 +157,7 @@ func TestHourlyRemainingSalaryUsesEffectiveHours(t *testing.T) {
 }
 
 func TestDefaultRetirementUsesConfiguredProgressStart(t *testing.T) {
-	config := defaultConfig()
+	config := testFullConfig()
 	config.ProfileEnabled = false
 	config.RetirementStart, _ = time.Parse("2006-01-02", "2026-07-16")
 	config.ProgressBirthDate, _ = time.Parse("2006-01-02", "1996-07-16")
@@ -115,7 +165,7 @@ func TestDefaultRetirementUsesConfiguredProgressStart(t *testing.T) {
 	if !result.IsEstimate || result.RetirementMonth.Format("2006-01-02") != "2056-07-01" {
 		t.Fatalf("unexpected default retirement: %+v", result)
 	}
-	if result.Progress <= .5 {
-		t.Fatalf("expected lifetime progress, got %v", result.Progress)
+	if result.Progress < .4 || result.Progress > .45 {
+		t.Fatalf("expected age-18 retirement progress, got %v", result.Progress)
 	}
 }

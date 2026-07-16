@@ -18,8 +18,8 @@ func TestLoadRepositoryConfig(t *testing.T) {
 	if config.RefreshInterval != time.Second {
 		t.Errorf("RefreshInterval = %s, want 1s", config.RefreshInterval)
 	}
-	if config.RetirementYears != 30 {
-		t.Errorf("RetirementYears = %d, want 30", config.RetirementYears)
+	if config.RetirementYears != 0 || config.ProfileEnabled {
+		t.Errorf("retirement defaults = years %d, profile %t; want disabled", config.RetirementYears, config.ProfileEnabled)
 	}
 	if got := config.RetirementStart.Format("2006-01-02"); got != "2026-07-16" {
 		t.Errorf("RetirementStart = %s, want 2026-07-16", got)
@@ -30,8 +30,32 @@ func TestLoadRepositoryConfig(t *testing.T) {
 	if len(config.Workdays) != 5 || !config.Workdays[time.Monday] || !config.Workdays[time.Friday] {
 		t.Errorf("Workdays = %#v, want Monday through Friday", config.Workdays)
 	}
-	if config.Assets != 100000 || config.Reserve != 0 {
-		t.Errorf("assets/reserve = %.2f/%.2f, want 100000/0", config.Assets, config.Reserve)
+	if config.AssetsEnabled || config.Assets != 0 || config.Reserve != 0 {
+		t.Errorf("asset defaults = enabled %t, assets %.2f, reserve %.2f; want disabled", config.AssetsEnabled, config.Assets, config.Reserve)
+	}
+}
+
+func TestCreateDefaultConfigUsesPrivateFocusedDefaults(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "nested", "config.toml")
+	if err := createDefaultConfig(path); err != nil {
+		t.Fatal(err)
+	}
+	config, err := loadConfig(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.ProfileEnabled || config.AssetsEnabled || config.RetirementYears != 0 {
+		t.Fatalf("optional modules should be disabled: %#v", config)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Fatalf("default config permissions = %o", info.Mode().Perm())
+	}
+	if err := createDefaultConfig(path); err != nil {
+		t.Fatalf("creating an existing default should be harmless: %v", err)
 	}
 }
 

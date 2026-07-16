@@ -32,7 +32,7 @@ func main() {
 		fatalf("create output directory: %v", err)
 	}
 	base := fmt.Sprintf("yuxin-v%s-%s", version, *platform)
-	archivePath := filepath.Join(*outputDir, base+".zip")
+	archivePath := filepath.Join(*outputDir, archiveFilename(*platform))
 	if err := createArchive(archivePath, base, *platform, *executable); err != nil {
 		fatalf("create archive: %v", err)
 	}
@@ -44,6 +44,10 @@ func main() {
 	if err := os.WriteFile(archivePath+".sha256", []byte(checksum), 0o644); err != nil {
 		fatalf("write checksum: %v", err)
 	}
+}
+
+func archiveFilename(platform string) string {
+	return "yuxin-" + platform + ".zip"
 }
 
 func createArchive(archivePath, base, platform, executable string) error {
@@ -64,6 +68,8 @@ func createArchive(archivePath, base, platform, executable string) error {
 		{executable, executableName, 0o755},
 		{"data/default-config.toml", "yuxin.toml", 0o644},
 		{"data/holidays-2026.json", "holidays-2026.json", 0o644},
+		{"README.md", "README.md", 0o644},
+		{"LICENSE", "LICENSE", 0o644},
 	}
 	for _, entry := range entries {
 		content, err := os.ReadFile(entry.path)

@@ -51,7 +51,7 @@ func defaultConfig() Config {
 	birth := mustDate("1995-01-01")
 	return Config{
 		RefreshInterval:   time.Second,
-		RetirementYears:   30,
+		RetirementYears:   0,
 		RetirementStart:   today,
 		ProgressBirthDate: birth,
 		SalaryMode:        "monthly",
@@ -66,12 +66,10 @@ func defaultConfig() Config {
 		LunchEnabled:   true,
 		LunchStart:     12 * 3600,
 		LunchEnd:       13 * 3600,
-		ProfileEnabled: true,
+		ProfileEnabled: false,
 		BirthDate:      birth,
 		Sex:            "male",
-		AssetsEnabled:  true,
-		Assets:         100000,
-		AssetItems:     []AssetItem{{Name: "当前余额", Kind: "checking", Balance: 100000}},
+		AssetsEnabled:  false,
 	}
 }
 

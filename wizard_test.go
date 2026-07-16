@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"path/filepath"
 	"strings"
@@ -8,8 +9,56 @@ import (
 	"time"
 )
 
+func TestConfigWizardEditsRefreshInterval(t *testing.T) {
+	config := testFullConfig()
+	path := filepath.Join(t.TempDir(), "config.toml")
+	var output bytes.Buffer
+	updated, err := configureConfig(strings.NewReader("3\ninvalid\n0.5\n0\n"), &output, path, config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.RefreshInterval != 500*time.Millisecond || !strings.Contains(output.String(), "0.1 到 3600") {
+		t.Fatalf("refresh interval = %s, output %q", updated.RefreshInterval, output.String())
+	}
+}
+
+func TestConfigWizardAddsAndDeletesAccount(t *testing.T) {
+	config := testFullConfig()
+	path := filepath.Join(t.TempDir(), "config.toml")
+	var output bytes.Buffer
+	input := "5\n3\na\n定期\n2\n3w\nd\n2\n0\n0\n0\n"
+	updated, err := configureConfig(strings.NewReader(input), &output, path, config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(updated.AssetItems) != 1 || updated.AssetItems[0].Name != "当前余额" {
+		t.Fatalf("accounts = %#v", updated.AssetItems)
+	}
+}
+
+func TestWizardSecretAndYesNoWithPlainInput(t *testing.T) {
+	var output bytes.Buffer
+	wizard := configWizard{
+		input:  strings.NewReader("secret\nmaybe\nyes\n"),
+		reader: bufio.NewReader(strings.NewReader("secret\nmaybe\nyes\n")),
+		out:    &output,
+	}
+	// Keep input and reader on the same stream, as configureConfig does.
+	stream := strings.NewReader("secret\nmaybe\nyes\n")
+	wizard.input = stream
+	wizard.reader = bufio.NewReader(stream)
+	secret, err := wizard.secret("密码")
+	if err != nil || secret != "secret" {
+		t.Fatalf("secret = %q, %v", secret, err)
+	}
+	answer, err := wizard.yesNo("确认", false)
+	if err != nil || !answer || !strings.Contains(output.String(), "请输入 y 或 n") {
+		t.Fatalf("yesNo = %t, %v, output %q", answer, err, output.String())
+	}
+}
+
 func TestConfigWizardChangesOnlySelectedSection(t *testing.T) {
-	config := defaultConfig()
+	config := testFullConfig()
 	config.StartSecond = 10 * 3600
 	config.EndSecond = 19 * 3600
 	path := filepath.Join(t.TempDir(), "config.toml")
@@ -34,7 +83,7 @@ func TestConfigWizardChangesOnlySelectedSection(t *testing.T) {
 }
 
 func TestConfigWizardAcceptsCompactAssetAmount(t *testing.T) {
-	config := defaultConfig()
+	config := testFullConfig()
 	path := filepath.Join(t.TempDir(), "config.toml")
 	var output bytes.Buffer
 	updated, err := configureConfig(strings.NewReader("5\n1\n200k\n0\n0\n"), &output, path, config)
@@ -47,7 +96,7 @@ func TestConfigWizardAcceptsCompactAssetAmount(t *testing.T) {
 }
 
 func TestEditingCurrentBalancePreservesOtherAccounts(t *testing.T) {
-	config := defaultConfig()
+	config := testFullConfig()
 	config.AssetItems = []AssetItem{
 		{Name: "工资卡", Kind: "checking", Balance: 100000},
 		{Name: "定期", Kind: "deposit", Balance: 300000},
@@ -65,7 +114,7 @@ func TestEditingCurrentBalancePreservesOtherAccounts(t *testing.T) {
 }
 
 func TestInvalidClockAndChoicesAreNotSilentlySaved(t *testing.T) {
-	config := defaultConfig()
+	config := testFullConfig()
 	path := filepath.Join(t.TempDir(), "config.toml")
 	var output bytes.Buffer
 	input := "2\n\ninvalid\n10:00\n19:00\n\n\n\n0\n"
@@ -82,7 +131,7 @@ func TestInvalidClockAndChoicesAreNotSilentlySaved(t *testing.T) {
 }
 
 func TestClosingAssetsRequiresConfirmation(t *testing.T) {
-	config := defaultConfig()
+	config := testFullConfig()
 	path := filepath.Join(t.TempDir(), "config.toml")
 	var output bytes.Buffer
 	updated, err := configureConfig(strings.NewReader("5\n4\n\n0\n0\n"), &output, path, config)
@@ -95,7 +144,7 @@ func TestClosingAssetsRequiresConfirmation(t *testing.T) {
 }
 
 func TestConfigWizardAcceptsManualRetirementProfile(t *testing.T) {
-	config := defaultConfig()
+	config := testFullConfig()
 	path := filepath.Join(t.TempDir(), "config.toml")
 	var output bytes.Buffer
 	updated, err := configureConfig(strings.NewReader("4\n2\n1992-02-03\n2\n1\n0\n"), &output, path, config)
@@ -121,7 +170,7 @@ func TestParseIdentityNumber(t *testing.T) {
 }
 
 func TestSaveConfigPreservesMultipleAccounts(t *testing.T) {
-	config := defaultConfig()
+	config := testFullConfig()
 	config.RefreshInterval = 500 * time.Millisecond
 	config.AssetItems = []AssetItem{
 		{Name: "工资卡", Kind: "checking", Balance: 12345.67},

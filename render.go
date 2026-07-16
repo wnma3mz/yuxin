@@ -39,7 +39,11 @@ func renderDashboard(snapshot DashboardSnapshot, config Config, terminalWidth, t
 
 	refresh := "刷新 " + formatInterval(config.RefreshInterval)
 	if width >= 46 {
-		refresh += "  本地数据 ✓"
+		dataLabel := "本地数据 ✓"
+		if snapshot.DemoMode {
+			dataLabel = "演示数据 ✓"
+		}
+		refresh += "  " + dataLabel
 	}
 	statusWidth := inner - displayWidth(refresh) - 1
 	status = color(truncate(status, statusWidth), statusColor, useColor)
@@ -158,20 +162,31 @@ func renderDashboard(snapshot DashboardSnapshot, config Config, terminalWidth, t
 		lines = append(lines, panel("计算口径", []string{
 			fmt.Sprintf("时薪 %s · 日薪 %s", money(snapshot.Salary.HourlyRate), money(snapshot.Salary.DailyRate)),
 			"退休天数口径：距离预计退休月第一天；工作日口径使用随包节假日数据。",
+			"退休进度统一按 18 岁起计，不需要收集参加工作时间。",
 			"今日工资与实时余额按秒更新；未来口径不含个税、奖金、利息、通胀和养老金。",
 		}, width)...)
 	}
 	if helpVisible {
-		lines = append(lines, panel("快捷键", []string{"e 编辑配置   r 立即刷新   d 计算口径   ? 帮助   q 退出"}, width)...)
+		lines = append(lines, panel("快捷键", []string{
+			"e 编辑配置   r 立即刷新   s 隐私演示",
+			"d 计算口径   ? 帮助       q 退出",
+		}, width)...)
 	}
-	footer := "[e] 配置  [r] 刷新  [d] 详情  [?] 帮助  [q] 退出"
+	footer := "[e] 配置  [r] 刷新  [s] 演示  [d] 详情  [?] 帮助  [q] 退出"
+	if width < 70 {
+		footer = "[e] 配置  [s] 演示  [q] 退出"
+	}
 	lines = append(lines, pad(truncate(footer, width), width, alignCenter))
 	return strings.Join(lines, "\n")
 }
 
 func renderTiny(snapshot DashboardSnapshot, width int) string {
+	title := "余薪 YUXIN"
+	if snapshot.DemoMode {
+		title += " · 演示"
+	}
 	lines := []string{
-		"余薪 YUXIN",
+		title,
 		money(snapshot.Salary.EarnedToday),
 		remainingText(snapshot.Salary),
 	}
@@ -299,9 +314,10 @@ func retirementDate(retirement RetirementSnapshot) string {
 }
 
 func retirementProgress(progress float64, width int, useColor bool) string {
+	const label = "退休进度（18岁起）"
 	percent := fmt.Sprintf("%.1f%%", clampFloat(progress, 0, 1)*100)
-	barWidth := max(4, width-displayWidth("退休进度")-displayWidth(percent)-2)
-	return "退休进度 " + progressBar(progress, barWidth, useColor) + " " + percent
+	barWidth := max(4, width-displayWidth(label)-displayWidth(percent)-2)
+	return label + " " + progressBar(progress, barWidth, useColor) + " " + percent
 }
 
 func panel(title string, rows []string, width int) []string {

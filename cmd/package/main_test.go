@@ -22,7 +22,7 @@ func TestCreateArchiveIncludesRunnableBinaryAndLocalData(t *testing.T) {
 		t.Fatal(err)
 	}
 	archivePath := filepath.Join(t.TempDir(), "yuxin.zip")
-	if err := createArchive(archivePath, "yuxin-v0.1.0-windows-x86_64", "windows-x86_64", executable); err != nil {
+	if err := createArchive(archivePath, "yuxin-v0.2.0-windows-x86_64", "windows-x86_64", executable); err != nil {
 		t.Fatal(err)
 	}
 	archive, err := zip.OpenReader(archivePath)
@@ -30,7 +30,10 @@ func TestCreateArchiveIncludesRunnableBinaryAndLocalData(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer archive.Close()
-	want := map[string]bool{"yuxin.exe": false, "yuxin.toml": false, "holidays-2026.json": false}
+	want := map[string]bool{
+		"yuxin.exe": false, "yuxin.toml": false, "holidays-2026.json": false,
+		"README.md": false, "LICENSE": false,
+	}
 	for _, entry := range archive.File {
 		want[filepath.Base(entry.Name)] = true
 		if filepath.Base(entry.Name) == "yuxin.exe" && entry.Mode().Perm() != 0o755 {
@@ -41,5 +44,11 @@ func TestCreateArchiveIncludesRunnableBinaryAndLocalData(t *testing.T) {
 		if !found {
 			t.Errorf("archive is missing %s", name)
 		}
+	}
+}
+
+func TestArchiveFilenameIsStableAcrossVersions(t *testing.T) {
+	if got := archiveFilename("macos-arm64"); got != "yuxin-macos-arm64.zip" {
+		t.Fatalf("archive filename = %q", got)
 	}
 }

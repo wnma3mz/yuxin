@@ -70,6 +70,7 @@ func (snapshot HolidaySnapshot) IsActive() bool {
 
 type DashboardSnapshot struct {
 	Now                  time.Time
+	DemoMode             bool
 	Salary               SalarySnapshot
 	Retirement           RetirementSnapshot
 	RetirementEnabled    bool
@@ -185,8 +186,9 @@ func CalculateRetirement(config Config, today time.Time) (RetirementSnapshot, er
 	}
 	today = normalizedDate(today)
 	remaining := max(0, daysBetween(today, retirement))
-	totalDays := max(1, daysBetween(birth, retirement))
-	progress := math.Max(0, math.Min(1, float64(daysBetween(birth, today))/float64(totalDays)))
+	progressStart := birth.AddDate(18, 0, 0)
+	totalDays := max(1, daysBetween(progressStart, retirement))
+	progress := math.Max(0, math.Min(1, float64(daysBetween(progressStart, today))/float64(totalDays)))
 	return RetirementSnapshot{
 		RetirementMonth: retirement,
 		RemainingDays:   remaining,
@@ -201,7 +203,7 @@ func CalculateDefaultRetirement(config Config, today time.Time) RetirementSnapsh
 	retirement := time.Date(start.Year()+config.RetirementYears, start.Month(), 1, 0, 0, 0, 0, time.UTC)
 	progressStart := start
 	if !config.ProgressBirthDate.IsZero() {
-		progressStart = normalizedDate(config.ProgressBirthDate)
+		progressStart = normalizedDate(config.ProgressBirthDate).AddDate(18, 0, 0)
 	}
 	today = normalizedDate(today)
 	totalDays := max(1, daysBetween(progressStart, retirement))
@@ -213,6 +215,32 @@ func CalculateDefaultRetirement(config Config, today time.Time) RetirementSnapsh
 		IsEstimate:      true,
 		Progress:        progress,
 	}
+}
+
+// DemoDashboard returns a fixed synthetic dashboard for privacy-safe screenshots.
+// It never reads or derives values from the user's configuration.
+func DemoDashboard() (DashboardSnapshot, Config, error) {
+	config := defaultConfig()
+	config.SalaryAmount = 16800
+	config.MonthlyWorkdays = 21.75
+	config.RetirementYears = 30
+	config.ProfileEnabled = true
+	config.BirthDate = mustDate("1992-08-18")
+	config.ProgressBirthDate = config.BirthDate
+	config.AssetsEnabled = true
+	config.Assets = 258000
+	config.AssetItems = []AssetItem{
+		{Name: "演示活期", Kind: "checking", Balance: 58000},
+		{Name: "演示定期", Kind: "deposit", Balance: 200000},
+	}
+	config.Reserve = 30000
+	now := time.Date(2026, time.July, 16, 15, 24, 0, 0, time.Local)
+	snapshot, err := CalculateDashboard(now, config)
+	if err != nil {
+		return DashboardSnapshot{}, Config{}, err
+	}
+	snapshot.DemoMode = true
+	return snapshot, config, nil
 }
 
 func retirementDelay(config Config) (baseAge, delay int, err error) {

@@ -1,15 +1,13 @@
 # 余薪 Yuxin 默认配置
 version = 1
 refresh_interval = 1
-# 未配置身份证时，默认按距离现在 30 年估算退休；设为 0 可隐藏退休模块。
-retirement_years = 30
-# 固定估算起点，避免每次启动都把 30 年重新计时。
+# 退休和资产默认关闭；运行 `yuxin config` 可按需开启。
+retirement_years = 0
 retirement_start_date = "2026-07-16"
-# 未录入身份时，仅用于绘制退休进度，不用于推断性别。
 progress_birth_date = "1995-01-01"
 reserve = "0"
-assets_enabled = true
-profile_enabled = true
+assets_enabled = false
+profile_enabled = false
 
 [salary]
 # monthly（月薪）/ daily（日薪）/ hourly（时薪）
@@ -25,20 +23,3 @@ end = "18:00"
 lunch_enabled = true
 lunch_start = "12:00"
 lunch_end = "13:00"
-
-# 默认出生日期为 1995-01-01，性别为男；可以运行 `yuxin config` 修改。
-[profile]
-birth_date = "1995-01-01"
-sex = "male"                   # male / female
-# female_track = "55"          # 女性必填：50 / 55
-
-# 默认余额为 10 万，可以运行 `yuxin config` 修改；输入支持 20w、20万、200k。
-[[assets]]
-name = "当前余额"
-kind = "checking"              # checking / deposit / other
-balance = "100000"
-
-# [[assets]]
-# name = "定期存款"
-# kind = "deposit"
-# balance = "200000"
