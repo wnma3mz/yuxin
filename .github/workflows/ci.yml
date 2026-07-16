@@ -50,3 +50,17 @@ jobs:
       - uses: actions/checkout@v6
       - name: Validate installer syntax
         run: ${{ matrix.command }}
+      - name: Exercise shell installer
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          release_dir="$RUNNER_TEMP/yuxin-release"
+          package_dir="$RUNNER_TEMP/yuxin-package"
+          install_dir="$RUNNER_TEMP/yuxin-install"
+          mkdir -p "$release_dir" "$package_dir"
+          printf '#!/bin/sh\necho yuxin-installer-test\n' > "$package_dir/yuxin"
+          chmod 755 "$package_dir/yuxin"
+          (cd "$package_dir" && zip -q "$release_dir/yuxin-linux-x86_64.zip" yuxin)
+          (cd "$release_dir" && sha256sum yuxin-linux-x86_64.zip > yuxin-linux-x86_64.zip.sha256)
+          YUXIN_RELEASE_BASE="file://$release_dir" YUXIN_INSTALL_DIR="$install_dir" sh scripts/install.sh
+          test "$("$install_dir/yuxin")" = "yuxin-installer-test"
