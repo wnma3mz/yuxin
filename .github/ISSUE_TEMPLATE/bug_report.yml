@@ -1,0 +1,43 @@
+name: Bug 报告
+description: 报告可复现的功能或显示问题
+title: "[Bug] "
+body:
+  - type: markdown
+    attributes:
+      value: 感谢你帮助改进 Yuxin。安全问题请按 SECURITY.md 私密报告。
+  - type: input
+    id: version
+    attributes:
+      label: Yuxin 版本
+      description: 请粘贴 `yuxin --version` 的输出。
+    validations:
+      required: true
+  - type: dropdown
+    id: system
+    attributes:
+      label: 操作系统
+      options:
+        - macOS
+        - Windows
+        - Linux
+        - 其他
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      description: 请写出能稳定复现问题的最少步骤。
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望与实际结果
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: 补充信息
+      description: 可附上终端尺寸、配置片段或脱敏日志。请勿提交身份证号等敏感信息。
