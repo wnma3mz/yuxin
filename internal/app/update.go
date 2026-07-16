@@ -31,14 +31,28 @@ type githubRelease struct {
 	} `json:"assets"`
 }
 
-func runUpdate(output io.Writer) error {
+func runUpdate(output io.Writer, force bool) error {
+	client := &http.Client{Timeout: 90 * time.Second}
+	return runUpdateFrom(output, client, latestReleaseURL, force)
+}
+
+func runUpdateFrom(output io.Writer, client *http.Client, releaseURL string, force bool) error {
+	return runUpdateUsing(output, client, releaseURL, force, func(archiveData []byte, tag string, output io.Writer) error {
+		executable, err := os.Executable()
+		if err != nil {
+			return fmt.Errorf("定位当前程序：%w", err)
+		}
+		return installUpdate(archiveData, tag, output, executable, replaceExecutable)
+	})
+}
+
+func runUpdateUsing(output io.Writer, client *http.Client, releaseURL string, force bool, installer func([]byte, string, io.Writer) error) error {
 	platform, err := releasePlatform(runtime.GOOS, runtime.GOARCH)
 	if err != nil {
 		return err
 	}
 	fmt.Fprintln(output, "正在检查 GitHub 最新正式版…")
-	client := &http.Client{Timeout: 90 * time.Second}
-	releaseData, err := download(client, latestReleaseURL)
+	releaseData, err := download(client, releaseURL)
 	if err != nil {
 		return fmt.Errorf("读取最新版本：%w", err)
 	}
@@ -50,7 +64,7 @@ func runUpdate(output io.Writer) error {
 	if err != nil {
 		return err
 	}
-	if comparison >= 0 {
+	if !force && comparison >= 0 {
 		fmt.Fprintf(output, "当前已是最新版 %s。\n", version)
 		return nil
 	}
@@ -77,10 +91,10 @@ func runUpdate(output io.Writer) error {
 		return err
 	}
 
-	executable, err := os.Executable()
-	if err != nil {
-		return fmt.Errorf("定位当前程序：%w", err)
-	}
+	return installer(archiveData, release.TagName, output)
+}
+
+func installUpdate(archiveData []byte, tag string, output io.Writer, executable string, replacer func(string, string) (bool, error)) error {
 	if resolved, resolveErr := filepath.EvalSymlinks(executable); resolveErr == nil {
 		executable = resolved
 	}
@@ -120,15 +134,15 @@ func runUpdate(output io.Writer) error {
 	if err := temporary.Close(); err != nil {
 		return fmt.Errorf("关闭更新文件：%w", err)
 	}
-	pending, err := replaceExecutable(temporaryPath, executable)
+	pending, err := replacer(temporaryPath, executable)
 	if err != nil {
 		return fmt.Errorf("替换当前程序：%w", err)
 	}
 	keepTemporary = pending
 	if pending {
-		fmt.Fprintf(output, "已下载 %s，退出后将完成替换。\n", release.TagName)
+		fmt.Fprintf(output, "已下载 %s，退出后将完成替换。\n", tag)
 	} else {
-		fmt.Fprintf(output, "已更新到 %s。\n", release.TagName)
+		fmt.Fprintf(output, "已更新到 %s。\n", tag)
 	}
 	return nil
 }

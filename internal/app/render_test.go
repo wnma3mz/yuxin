@@ -119,6 +119,15 @@ func TestFormattingHelpers(t *testing.T) {
 	if got := displayWidth("余薪 YUXIN"); got != 10 {
 		t.Fatalf("displayWidth() = %d", got)
 	}
+	if got := color("状态", "32", true); !strings.Contains(got, "\x1b[32m") {
+		t.Fatalf("enabled color = %q", got)
+	}
+	if got := truncate("余薪 YUXIN", 6); got != "余薪 …" {
+		t.Fatalf("truncate() = %q", got)
+	}
+	if runeWidth('\u0301') != 0 || runeWidth('薪') != 2 || runeWidth('\uFFFD') != 1 || runeWidth('A') != 1 {
+		t.Fatal("rune width variants failed")
+	}
 }
 
 func TestStatusAndFormattingVariants(t *testing.T) {
@@ -135,8 +144,8 @@ func TestStatusAndFormattingVariants(t *testing.T) {
 		"working": "/ 秒", "lunch-break": "午休", "after-work": "结算",
 		"before-work": "等待", "rest-day": "休息",
 	} {
-		if got := incomeHint(SalarySnapshot{Status: status, HourlyRate: 36}); !strings.Contains(got, expected) {
-			t.Errorf("incomeHint(%q) = %q", status, got)
+		if got := incomeHintForDisplay(SalarySnapshot{Status: status, HourlyRate: 36}, false); !strings.Contains(got, expected) {
+			t.Errorf("incomeHintForDisplay(%q) = %q", status, got)
 		}
 	}
 	for seconds, expected := range map[int]string{0: "0s", 59: "59s", 60: "1m 00s", 3600: "1h 00m", 90061: "25h 01m"} {
@@ -256,5 +265,68 @@ func TestStandard80By24TerminalDoesNotOverflow(t *testing.T) {
 	lines := strings.Split(output, "\n")
 	if len(lines) > 24 || !strings.Contains(output, "未来") || strings.Contains(output, "资产续航") {
 		t.Fatalf("80x24 layout uses %d lines:\n%s", len(lines), output)
+	}
+}
+
+func TestPrivacySettingsHideDashboardFields(t *testing.T) {
+	config := testFullConfig()
+	config.HideAmounts = true
+	config.HideRetirementDate = true
+	snapshot, err := CalculateDashboard(time.Date(2026, time.July, 16, 15, 0, 0, 0, time.Local), config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	output := RenderDashboard(snapshot, config, 100, false)
+	for _, leaked := range []string{"¥286", "¥100,000", snapshot.Retirement.RetirementMonth.Format("2006-01")} {
+		if strings.Contains(output, leaked) {
+			t.Fatalf("privacy output leaked %q:\n%s", leaked, output)
+		}
+	}
+	if !strings.Contains(output, "¥••••") || strings.Contains(output, "预计退休") {
+		t.Fatalf("privacy settings were not applied:\n%s", output)
+	}
+}
+
+func TestRetirementCountdownModeAndUnits(t *testing.T) {
+	config := testFullConfig()
+	config.RetirementMode = "countdown"
+	snapshot, err := CalculateDashboard(time.Date(2026, time.July, 16, 15, 0, 0, 0, time.Local), config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for unit, suffix := range map[string]string{"years": "年", "months": "个月", "days": "天", "workdays": "个工作日"} {
+		config.RetirementUnit = unit
+		output := RenderDashboard(snapshot, config, 80, false)
+		if !strings.Contains(output, "距离退休") || !strings.Contains(output, suffix) {
+			t.Fatalf("unit %s missing from output:\n%s", unit, output)
+		}
+		for _, hidden := range []string{"预计退休", "法定", "退休进度（18岁起）"} {
+			if strings.Contains(output, hidden) {
+				t.Fatalf("countdown mode contains %q:\n%s", hidden, output)
+			}
+		}
+	}
+	config.RetirementUnit = "workdays"
+	tiny := RenderDashboard(snapshot, config, 23, false)
+	if !strings.Contains(tiny, "工作日") {
+		t.Fatalf("tiny retirement unit was ignored:\n%s", tiny)
+	}
+}
+
+func TestHolidayTextActiveAndFirstPeriod(t *testing.T) {
+	active := HolidaySnapshot{
+		Name: "国庆节", DaysUntil: 0,
+		Start: time.Date(2026, time.October, 1, 0, 0, 0, 0, time.Local),
+		End:   time.Date(2026, time.October, 7, 0, 0, 0, 0, time.Local),
+	}
+	if got := holidayText(active); !strings.Contains(got, "共 7 天") {
+		t.Fatalf("active holiday text = %q", got)
+	}
+	upcoming := HolidaySnapshot{
+		Name: "元旦", DaysUntil: 3,
+		Start: time.Date(2027, time.January, 1, 0, 0, 0, 0, time.Local),
+	}
+	if got := holidayText(upcoming); !strings.Contains(got, "下个假期") || !strings.Contains(got, "还有 3 天") {
+		t.Fatalf("first holiday text = %q", got)
 	}
 }

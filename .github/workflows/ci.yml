@@ -11,7 +11,18 @@ permissions:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    name: Test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            executable: yuxin
+          - os: macos-latest
+            executable: yuxin
+          - os: windows-latest
+            executable: yuxin.exe
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-go@v6
@@ -19,39 +30,38 @@ jobs:
           go-version-file: go.mod
           cache: false
       - name: Format
+        if: runner.os == 'Linux'
+        shell: bash
         run: test -z "$(gofmt -l .)"
-      - name: Test
+      - name: Test with coverage
+        if: runner.os == 'Linux'
         run: go test ./... -coverprofile=coverage.out
+      - name: Test
+        if: runner.os != 'Linux'
+        run: go test ./...
       - name: Coverage
+        if: runner.os == 'Linux'
         shell: bash
         run: |
           go tool cover -func=coverage.out
           coverage="$(go tool cover -func=coverage.out | awk '/^total:/ {gsub("%", "", $3); print $3}')"
-          awk -v coverage="$coverage" 'BEGIN {if (coverage + 0 < 70) exit 1}'
+          awk -v coverage="$coverage" 'BEGIN {if (coverage + 0 < 78) exit 1}'
       - name: Vet
         run: go vet ./...
       - name: Build
-        run: go build -trimpath -ldflags="-s -w -buildid=" -o yuxin ./cmd/yuxin
+        run: go build -trimpath -ldflags="-s -w -buildid=" -o ${{ matrix.executable }} ./cmd/yuxin
       - name: Smoke test
-        run: ./yuxin --version
+        shell: bash
+        run: ./${{ matrix.executable }} --version
 
-  installer-syntax:
-    strategy:
-      matrix:
-        include:
-          - os: ubuntu-latest
-            command: sh -n scripts/install.sh
-          - os: windows-latest
-            command: >-
-              pwsh -NoProfile -Command
-              "[scriptblock]::Create((Get-Content -Raw scripts/install.ps1)) | Out-Null"
-    runs-on: ${{ matrix.os }}
+  installer-shell:
+    name: Shell installer
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
       - name: Validate installer syntax
-        run: ${{ matrix.command }}
+        run: sh -n scripts/install.sh
       - name: Exercise shell installer
-        if: runner.os == 'Linux'
         shell: bash
         run: |
           release_dir="$RUNNER_TEMP/yuxin-release"
@@ -64,3 +74,41 @@ jobs:
           (cd "$release_dir" && sha256sum yuxin-linux-x86_64.zip > yuxin-linux-x86_64.zip.sha256)
           YUXIN_RELEASE_BASE="file://$release_dir" YUXIN_INSTALL_DIR="$install_dir" sh scripts/install.sh
           test "$("$install_dir/yuxin")" = "yuxin-installer-test"
+
+  installer-powershell:
+    name: PowerShell installer
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Validate installer syntax
+        shell: pwsh
+        run: |
+          [scriptblock]::Create((Get-Content -Raw scripts/install.ps1)) | Out-Null
+      - name: Exercise PowerShell installer
+        shell: pwsh
+        run: |
+          $releaseDirectory = Join-Path $env:RUNNER_TEMP "yuxin-release"
+          $packageDirectory = Join-Path $env:RUNNER_TEMP "yuxin-package"
+          $installDirectory = Join-Path $env:RUNNER_TEMP "yuxin-install"
+          New-Item -ItemType Directory -Force -Path $releaseDirectory, $packageDirectory | Out-Null
+
+          $asset = "yuxin-windows-x86_64.zip"
+          Copy-Item -LiteralPath $env:ComSpec -Destination (Join-Path $packageDirectory "yuxin.exe")
+          Compress-Archive -Path (Join-Path $packageDirectory "yuxin.exe") -DestinationPath (Join-Path $releaseDirectory $asset)
+          $hash = (Get-FileHash -Algorithm SHA256 (Join-Path $releaseDirectory $asset)).Hash.ToLowerInvariant()
+          "$hash  $asset" | Set-Content -Encoding ascii (Join-Path $releaseDirectory "$asset.sha256")
+
+          $env:YUXIN_RELEASE_BASE = $releaseDirectory
+          $env:YUXIN_INSTALL_DIR = $installDirectory
+          $env:YUXIN_SKIP_PATH = "1"
+          $userPathBefore = [Environment]::GetEnvironmentVariable("Path", "User")
+          & ./scripts/install.ps1
+          $userPathAfter = [Environment]::GetEnvironmentVariable("Path", "User")
+          if ($userPathAfter -ne $userPathBefore) {
+              throw "YUXIN_SKIP_PATH 未跳过用户 PATH 修改。"
+          }
+
+          $output = & (Join-Path $installDirectory "yuxin.exe") /d /c "echo yuxin-installer-test"
+          if ($output.Trim() -ne "yuxin-installer-test") {
+              throw "安装后的可执行文件冒烟测试失败。"
+          }

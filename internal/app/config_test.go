@@ -34,6 +34,9 @@ func TestLoadRepositoryConfig(t *testing.T) {
 	if config.AssetsEnabled || config.Assets != 0 || config.Reserve != 0 {
 		t.Errorf("asset defaults = enabled %t, assets %.2f, reserve %.2f; want disabled", config.AssetsEnabled, config.Assets, config.Reserve)
 	}
+	if config.RetirementMode != "full" || config.RetirementUnit != "days" || config.HideAmounts || config.HideRetirementDate {
+		t.Errorf("display defaults = mode %q, unit %q, hide amounts %t, hide retirement %t", config.RetirementMode, config.RetirementUnit, config.HideAmounts, config.HideRetirementDate)
+	}
 }
 
 func TestCreateDefaultConfigUsesPrivateFocusedDefaults(t *testing.T) {
@@ -122,6 +125,17 @@ func TestParseAmount(t *testing.T) {
 	}
 }
 
+func TestScalarAndBooleanParserErrors(t *testing.T) {
+	if _, err := parseBool("yes"); err == nil {
+		t.Fatal("parseBool accepted a non-boolean value")
+	}
+	for _, value := range []string{"", "\"unterminated"} {
+		if _, err := scalarValue(value); err == nil {
+			t.Fatalf("scalarValue(%q) unexpectedly succeeded", value)
+		}
+	}
+}
+
 func TestLoadConfigValidation(t *testing.T) {
 	tests := map[string]string{
 		"future version":     "version = 2\n",
@@ -139,6 +153,8 @@ func TestLoadConfigValidation(t *testing.T) {
 		"one negative asset": "[[assets]]\nbalance = \"-1\"\n[[assets]]\nbalance = \"2\"\n",
 		"future birth":       "[profile]\nbirth_date = \"2999-01-01\"\n",
 		"female track":       "[profile]\nsex = \"female\"\n",
+		"retirement mode":    "retirement_mode = \"verbose\"\n",
+		"retirement unit":    "retirement_unit = \"weeks\"\n",
 	}
 	for name, content := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -146,6 +162,31 @@ func TestLoadConfigValidation(t *testing.T) {
 				t.Fatal("loadConfig unexpectedly succeeded")
 			}
 		})
+	}
+}
+
+func TestLoadConfigRejectsUnsafeOrUnboundedAssets(t *testing.T) {
+	for name, content := range map[string]string{
+		"escape":    "[[assets]]\nname = \"bad\\u001bname\"\n",
+		"newline":   "[[assets]]\nname = \"bad\\nname\"\n",
+		"long name": "[[assets]]\nname = \"" + strings.Repeat("余", maxAssetNameRunes+1) + "\"\n",
+		"too many":  strings.Repeat("[[assets]]\n", maxAssetItems+1),
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := loadConfig(writeTestConfig(t, content)); err == nil {
+				t.Fatal("loadConfig unexpectedly accepted unsafe assets")
+			}
+		})
+	}
+}
+
+func TestLoadConfigRejectsOversizedOrNonRegularFile(t *testing.T) {
+	oversized := writeTestConfig(t, strings.Repeat("# x\n", maxConfigFileSize/4+1))
+	if _, err := loadConfig(oversized); err == nil || !strings.Contains(err.Error(), "不能超过") {
+		t.Fatalf("oversized config error = %v", err)
+	}
+	if _, err := loadConfig(t.TempDir()); err == nil || !strings.Contains(err.Error(), "普通文件") {
+		t.Fatalf("directory config error = %v", err)
 	}
 }
 
@@ -228,6 +269,84 @@ func TestSaveConfigDoesNotDamageExistingFileOnValidationError(t *testing.T) {
 	}
 	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
 		t.Fatalf("config permissions = %o, want 600", info.Mode().Perm())
+	}
+}
+
+func TestDisplayAndPrivacyConfigRoundTrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	config := defaultConfig()
+	config.RetirementMode = "countdown"
+	config.RetirementUnit = "workdays"
+	config.HideAmounts = true
+	config.HideRetirementDate = true
+	if err := saveConfig(config, path); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := loadConfig(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.RetirementMode != "countdown" || loaded.RetirementUnit != "workdays" || !loaded.HideAmounts || !loaded.HideRetirementDate {
+		t.Fatalf("round trip display config = %#v", loaded)
+	}
+}
+
+func TestValidateConfigRejectsInvalidFields(t *testing.T) {
+	tests := map[string]func(*Config){
+		"retirement years": func(config *Config) { config.RetirementYears = 101 },
+		"future progress birth": func(config *Config) {
+			config.ProgressBirthDate = configDateOnly(time.Now()).AddDate(0, 0, 1)
+		},
+		"retirement mode": func(config *Config) { config.RetirementMode = "verbose" },
+		"retirement unit": func(config *Config) { config.RetirementUnit = "weeks" },
+		"salary mode":     func(config *Config) { config.SalaryMode = "weekly" },
+		"salary amount":   func(config *Config) { config.SalaryAmount = 0 },
+		"monthly workdays": func(config *Config) {
+			config.MonthlyWorkdays = 0
+		},
+		"empty workdays": func(config *Config) { config.Workdays = nil },
+		"work hours":     func(config *Config) { config.EndSecond = config.StartSecond },
+		"lunch hours":    func(config *Config) { config.LunchStart = config.StartSecond - 1 },
+		"missing profile birth": func(config *Config) {
+			config.ProfileEnabled = true
+			config.BirthDate = time.Time{}
+		},
+		"invalid profile sex": func(config *Config) {
+			config.ProfileEnabled = true
+			config.Sex = "other"
+		},
+		"future profile birth": func(config *Config) {
+			config.ProfileEnabled = true
+			config.BirthDate = configDateOnly(time.Now()).AddDate(0, 0, 1)
+		},
+		"female track": func(config *Config) {
+			config.ProfileEnabled = true
+			config.Sex = "female"
+			config.FemaleTrack = "51"
+		},
+		"negative reserve": func(config *Config) { config.Reserve = -1 },
+		"negative assets":  func(config *Config) { config.Assets = -1 },
+		"negative account": func(config *Config) {
+			config.AssetItems = []AssetItem{{Balance: -1}}
+		},
+		"too many accounts": func(config *Config) {
+			config.AssetItems = make([]AssetItem, maxAssetItems+1)
+		},
+		"account control": func(config *Config) {
+			config.AssetItems = []AssetItem{{Name: "bad\x1bname"}}
+		},
+		"account name length": func(config *Config) {
+			config.AssetItems = []AssetItem{{Name: strings.Repeat("余", maxAssetNameRunes+1)}}
+		},
+	}
+	for name, mutate := range tests {
+		t.Run(name, func(t *testing.T) {
+			config := defaultConfig()
+			mutate(&config)
+			if err := validateConfig(config); err == nil {
+				t.Fatal("validateConfig unexpectedly succeeded")
+			}
+		})
 	}
 }
 

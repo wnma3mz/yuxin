@@ -5,6 +5,8 @@ refresh_interval = 1
 retirement_years = 0
 retirement_start_date = "2026-07-16"
 progress_birth_date = "1995-01-01"
+retirement_mode = "full"
+retirement_unit = "days"
 reserve = "0"
 assets_enabled = false
 profile_enabled = false
@@ -23,3 +25,7 @@ end = "18:00"
 lunch_enabled = true
 lunch_start = "12:00"
 lunch_end = "13:00"
+
+[privacy]
+hide_amounts = false
+hide_retirement_date = false

@@ -4,6 +4,7 @@ import (
 	_ "embed"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -20,20 +21,25 @@ var version = strings.TrimSpace(versionFile)
 
 type cliOptions struct {
 	command        string
+	configAction   string
+	actionPath     string
 	configPath     string
 	configExplicit bool
 	interval       time.Duration
 	hasInterval    bool
 	showVersion    bool
 	showHelp       bool
+	forceUpdate    bool
+	shareReal      bool
+	shareCard      string
 }
 
 // Run executes the Yuxin command and returns its process exit code.
 func Run(args []string, stdin, stdout, stderr *os.File) int {
-	return run(args, stdin, stdout, stderr)
+	return runAt(args, stdin, stdout, stderr, time.Now())
 }
 
-func run(args []string, stdin, stdout, stderr *os.File) int {
+func runAt(args []string, stdin, stdout, stderr *os.File, now time.Time) int {
 	opts, err := parseArgs(args)
 	if err != nil {
 		fmt.Fprintf(stderr, "错误：%v\n", err)
@@ -48,9 +54,21 @@ func run(args []string, stdin, stdout, stderr *os.File) int {
 		return 0
 	}
 	if opts.command == "update" {
-		if err := runUpdate(stdout); err != nil {
+		if err := runUpdate(stdout, opts.forceUpdate); err != nil {
 			fmt.Fprintf(stderr, "更新失败：%v\n", err)
 			return 1
+		}
+		return 0
+	}
+	remindHolidayData(stderr, now)
+	if opts.command == "share" && !opts.shareReal {
+		snapshot, shareConfig, err := DemoDashboard()
+		if err == nil {
+			err = writeShareCard(stdout, snapshot, shareConfig, opts.shareCard)
+		}
+		if err != nil {
+			fmt.Fprintf(stderr, "生成分享卡片失败：%v\n", err)
+			return 2
 		}
 		return 0
 	}
@@ -60,8 +78,22 @@ func run(args []string, stdin, stdout, stderr *os.File) int {
 		fmt.Fprintf(stderr, "错误：%v\n", err)
 		return 2
 	}
+	if opts.command == "config" && opts.configAction == "import" {
+		if err := importConfig(opts.actionPath, path, stdout); err != nil {
+			fmt.Fprintf(stderr, "导入失败：%v\n", err)
+			return 2
+		}
+		return 0
+	}
+	if opts.command == "config" && opts.configAction == "clear" {
+		if err := clearConfig(path, stdin, stdout); err != nil {
+			fmt.Fprintf(stderr, "清理失败：%v\n", err)
+			return 2
+		}
+		return 0
+	}
 	config, source, err := readConfig(path, explicit)
-	if opts.command == "config" && errors.Is(err, os.ErrNotExist) {
+	if opts.command == "config" && opts.configAction == "" && errors.Is(err, os.ErrNotExist) {
 		config = defaultConfig()
 		err = saveConfig(config, path)
 		source = path
@@ -74,9 +106,35 @@ func run(args []string, stdin, stdout, stderr *os.File) int {
 		fmt.Fprintf(stderr, "错误：%v\n", err)
 		return 2
 	}
+	if opts.command == "config" && opts.configAction == "export" {
+		if err := exportConfig(config, opts.actionPath, stdout); err != nil {
+			fmt.Fprintf(stderr, "导出失败：%v\n", err)
+			return 2
+		}
+		return 0
+	}
+	if opts.command == "share" {
+		fmt.Fprintln(stderr, "隐私提示：正在生成真实数据卡片，请在分享前检查金额和退休信息。")
+		snapshot, err := CalculateDashboard(now, config)
+		if err == nil {
+			err = writeShareCard(stdout, snapshot, config, opts.shareCard)
+		}
+		if err != nil {
+			fmt.Fprintf(stderr, "生成分享卡片失败：%v\n", err)
+			return 2
+		}
+		return 0
+	}
+	if opts.command == "web" {
+		if err := runWeb(stdout, config); err != nil {
+			fmt.Fprintf(stderr, "启动本地窗口失败：%v\n", err)
+			return 1
+		}
+		return 0
+	}
 
 	if opts.command == "doctor" {
-		return runDoctor(stdout, stdin, config, path, source)
+		return runDoctor(stdout, stdin, config, path, source, now)
 	}
 	if opts.command == "config" {
 		if _, err := configureConfig(stdin, stdout, path, config); err != nil {
@@ -94,7 +152,7 @@ func run(args []string, stdin, stdout, stderr *os.File) int {
 		}
 	}
 	if opts.command == "once" || !isTerminal(stdin) || !isTerminal(stdout) {
-		snapshot, err := CalculateDashboard(time.Now(), config)
+		snapshot, err := CalculateDashboard(now, config)
 		if err != nil {
 			fmt.Fprintf(stderr, "错误：计算仪表盘：%v\n", err)
 			return 2
@@ -142,16 +200,38 @@ func parseArgs(args []string) (cliOptions, error) {
 				return opts, err
 			}
 			opts.interval, opts.hasInterval = interval, true
-		case arg == "once" || arg == "doctor" || arg == "config" || arg == "update":
+		case opts.command == "config" && opts.actionPath == "" && (opts.configAction == "export" || opts.configAction == "import"):
+			opts.actionPath = arg
+		case arg == "once" || arg == "doctor" || arg == "config" || arg == "update" || arg == "share" || arg == "web":
 			if opts.command != "" {
 				return opts, fmt.Errorf("只能指定一个命令")
 			}
 			opts.command = arg
+		case opts.command == "config" && opts.configAction == "" && (arg == "export" || arg == "import" || arg == "clear"):
+			opts.configAction = arg
+		case opts.command == "share" && arg == "--real":
+			opts.shareReal = true
+		case opts.command == "share" && arg == "--card":
+			index++
+			if index >= len(args) {
+				return opts, errors.New("--card 需要 overview 或 workday")
+			}
+			opts.shareCard = args[index]
+		case opts.command == "share" && strings.HasPrefix(arg, "--card="):
+			opts.shareCard = strings.TrimPrefix(arg, "--card=")
+		case opts.command == "update" && arg == "--force":
+			opts.forceUpdate = true
 		case arg == "-h" || arg == "--help":
 			opts.showHelp = true
 		default:
 			return opts, fmt.Errorf("未知参数 %q", arg)
 		}
+	}
+	if (opts.configAction == "export" || opts.configAction == "import") && opts.actionPath == "" {
+		return opts, fmt.Errorf("config %s 需要文件路径", opts.configAction)
+	}
+	if opts.shareCard == "" {
+		opts.shareCard = "overview"
 	}
 	return opts, nil
 }
@@ -201,7 +281,7 @@ func readConfig(path string, explicit bool) (Config, string, error) {
 	return Config{}, "", err
 }
 
-func runDoctor(stdout, stdin *os.File, config Config, path, source string) int {
+func runDoctor(stdout, stdin *os.File, config Config, path, source string, now time.Time) int {
 	fmt.Fprintf(stdout, "余薪 Yuxin %s\n", version)
 	fmt.Fprintf(stdout, "Go: %s  ✓\n", runtime.Version())
 	interactive := isTerminal(stdin) && isTerminal(stdout)
@@ -217,6 +297,13 @@ func runDoctor(stdout, stdin *os.File, config Config, path, source string) int {
 	}
 	fmt.Fprintf(stdout, "刷新间隔: %s  ✓\n", formatInterval(config.RefreshInterval))
 	fmt.Fprintln(stdout, "仪表盘数据: 本地配置，无网络请求 ✓")
+	year := now.Year()
+	calendar, err := LoadHolidayCalendar(year)
+	if err != nil || calendar == nil {
+		fmt.Fprintf(stdout, "节假日数据: 缺少 %d 年数据，请运行 yuxin update --force !\n", year)
+	} else {
+		fmt.Fprintf(stdout, "节假日数据: %d 年随包数据 ✓\n", calendar.Year)
+	}
 	return 0
 }
 
@@ -270,9 +357,15 @@ func runDashboardSession(stdin, stdout, stderr *os.File, config Config) (string,
 	draw := func() error {
 		color := os.Getenv("NO_COLOR") == ""
 		renderConfig := config
-		snapshot, err := CalculateDashboard(time.Now(), renderConfig)
+		var (
+			snapshot DashboardSnapshot
+			err      error
+		)
 		if demoMode {
 			snapshot, renderConfig, err = DemoDashboard()
+			renderConfig.RetirementUnit = config.RetirementUnit
+		} else {
+			snapshot, err = CalculateDashboard(time.Now(), renderConfig)
 		}
 		if err != nil {
 			return err
@@ -328,6 +421,10 @@ func runDashboardSession(stdin, stdout, stderr *os.File, config Config) (string,
 				demoMode = !demoMode
 				details = false
 				helpVisible = false
+			case 'u', 'U':
+				config.RetirementUnit = nextRetirementUnit(config.RetirementUnit)
+				details = false
+				helpVisible = false
 			case 'd', 'D':
 				details = !details
 				helpVisible = false
@@ -342,6 +439,19 @@ func runDashboardSession(stdin, stdout, stderr *os.File, config Config) (string,
 				return "", 2
 			}
 		}
+	}
+}
+
+func nextRetirementUnit(current string) string {
+	switch current {
+	case "years":
+		return "months"
+	case "months":
+		return "days"
+	case "days":
+		return "workdays"
+	default:
+		return "years"
 	}
 }
 
@@ -374,16 +484,31 @@ func formatInterval(interval time.Duration) string {
 	return strconv.FormatFloat(seconds, 'f', -1, 64) + "s"
 }
 
-const usage = `用法：yuxin [once|config|doctor|update] [选项]
+func remindHolidayData(output io.Writer, now time.Time) {
+	calendar, err := LoadHolidayCalendar(now.Year())
+	if err == nil && calendar != nil && calendar.Year == now.Year() {
+		return
+	}
+	fmt.Fprintf(output, "提醒：当前版本未附带 %d 年节假日数据，请运行 yuxin update --force。\n", now.Year())
+}
+
+const usage = `用法：yuxin [once|config|doctor|share|web|update] [选项]
 
 命令：
   once                输出一次仪表盘快照
   config              修改本地配置
+  config export FILE  导出配置并提示敏感字段
+  config import FILE  校验并导入配置
+  config clear        确认后清除本地配置
   doctor              检查运行环境和配置
+  share               生成使用合成数据的纯文本分享卡片
+  share --real        显式生成真实数据分享卡片
+  web                 打开仅监听本机的轻量入口
   update              安装 GitHub 上的最新正式版
 
 选项：
   --config PATH       使用指定 TOML 配置
   --interval SECONDS  临时覆盖刷新间隔
+  --force             强制重新安装 Latest Release
   --version           显示版本
   -h, --help          显示帮助`

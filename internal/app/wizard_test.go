@@ -147,7 +147,7 @@ func TestConfigWizardAcceptsManualRetirementProfile(t *testing.T) {
 	config := testFullConfig()
 	path := filepath.Join(t.TempDir(), "config.toml")
 	var output bytes.Buffer
-	updated, err := configureConfig(strings.NewReader("4\n2\n1992-02-03\n2\n1\n0\n"), &output, path, config)
+	updated, err := configureConfig(strings.NewReader("4\n2\n1992-02-03\n2\n1\n1\n3\n0\n"), &output, path, config)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -187,5 +187,38 @@ func TestSaveConfigPreservesMultipleAccounts(t *testing.T) {
 	}
 	if loaded.RefreshInterval != 500*time.Millisecond || len(loaded.AssetItems) != 2 || loaded.AssetItems[1].Kind != "deposit" || loaded.Assets != config.Assets {
 		t.Fatalf("round trip = %#v", loaded)
+	}
+}
+
+func TestConfigWizardEditsPrivacyAndRetirementDisplay(t *testing.T) {
+	config := testFullConfig()
+	path := filepath.Join(t.TempDir(), "config.toml")
+	var output bytes.Buffer
+	input := "6\ny\ny\n4\n3\n2\n4\n0\n"
+	updated, err := configureConfig(strings.NewReader(input), &output, path, config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !updated.HideAmounts || !updated.HideRetirementDate || updated.RetirementMode != "countdown" || updated.RetirementUnit != "workdays" {
+		t.Fatalf("updated display config = %#v", updated)
+	}
+}
+
+func TestWizardSummaryHonorsPrivacySettings(t *testing.T) {
+	config := testFullConfig()
+	config.SalaryAmount = 12345
+	config.Assets = 98765
+	config.BirthDate = mustDate("1992-02-03")
+	config.HideAmounts = true
+	config.HideRetirementDate = true
+	var output bytes.Buffer
+	configWizard{out: &output}.summary(config)
+	for _, secret := range []string{"12,345", "98,765", "1992-02-03"} {
+		if strings.Contains(output.String(), secret) {
+			t.Fatalf("summary leaked %q: %s", secret, output.String())
+		}
+	}
+	if !strings.Contains(output.String(), "¥••••") || !strings.Contains(output.String(), "日期隐藏") {
+		t.Fatalf("summary did not show privacy state: %s", output.String())
 	}
 }

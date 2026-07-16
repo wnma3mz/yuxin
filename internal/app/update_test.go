@@ -5,8 +5,12 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -145,5 +149,167 @@ func TestExtractExecutable(t *testing.T) {
 	}
 	if err := extractExecutable(archive.Bytes(), "yuxin.exe", &bytes.Buffer{}); err == nil {
 		t.Fatal("missing executable unexpectedly succeeded")
+	}
+}
+
+func TestRunUpdateFromLatestReleaseMetadata(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		response.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(response, `{"tag_name":%q,"assets":[]}`, "v"+version)
+	}))
+	defer server.Close()
+	var output bytes.Buffer
+	if err := runUpdateFrom(&output, server.Client(), server.URL, false); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output.String(), "当前已是最新版") {
+		t.Fatalf("update output = %q", output.String())
+	}
+}
+
+func TestRunUpdateFromRejectsBadOrIncompleteRelease(t *testing.T) {
+	for name, body := range map[string]string{
+		"invalid JSON":  `{`,
+		"missing asset": `{"tag_name":"v99.0.0","assets":[]}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+				response.Write([]byte(body))
+			}))
+			defer server.Close()
+			if err := runUpdateFrom(&bytes.Buffer{}, server.Client(), server.URL, false); err == nil {
+				t.Fatal("incomplete release unexpectedly succeeded")
+			}
+		})
+	}
+}
+
+func TestRunUpdateUsingDownloadsAndVerifiesRelease(t *testing.T) {
+	archive := []byte("archive bytes")
+	digest := sha256.Sum256(archive)
+	platform, err := releasePlatform(runtime.GOOS, runtime.GOARCH)
+	if err != nil {
+		t.Fatal(err)
+	}
+	archiveName := "yuxin-" + platform + ".zip"
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		switch request.URL.Path {
+		case "/latest":
+			fmt.Fprintf(response, `{"tag_name":"v99.0.0","assets":[{"name":%q,"browser_download_url":%q},{"name":%q,"browser_download_url":%q}]}`,
+				archiveName, server.URL+"/archive", archiveName+".sha256", server.URL+"/checksum")
+		case "/archive":
+			response.Write(archive)
+		case "/checksum":
+			fmt.Fprintf(response, "%x  %s\n", digest, archiveName)
+		default:
+			http.NotFound(response, request)
+		}
+	}))
+	defer server.Close()
+	called := false
+	installer := func(content []byte, tag string, output io.Writer) error {
+		called = true
+		if !bytes.Equal(content, archive) || tag != "v99.0.0" {
+			t.Fatalf("installer received %q, %q", content, tag)
+		}
+		fmt.Fprintln(output, "installed")
+		return nil
+	}
+	var output bytes.Buffer
+	if err := runUpdateUsing(&output, server.Client(), server.URL+"/latest", false, installer); err != nil {
+		t.Fatal(err)
+	}
+	if !called || !strings.Contains(output.String(), "正在下载") || !strings.Contains(output.String(), "installed") {
+		t.Fatalf("called %t, output %q", called, output.String())
+	}
+}
+
+func TestForcedUpdateDoesNotStopAtEqualVersion(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		fmt.Fprintf(response, `{"tag_name":%q,"assets":[]}`, "v"+version)
+	}))
+	defer server.Close()
+	err := runUpdateFrom(&bytes.Buffer{}, server.Client(), server.URL, true)
+	if err == nil || !strings.Contains(err.Error(), "缺少") {
+		t.Fatalf("forced update error = %v", err)
+	}
+}
+
+func TestForcedUpdateCanReinstallOlderLatestRelease(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		fmt.Fprint(response, `{"tag_name":"v0.1.0","assets":[]}`)
+	}))
+	defer server.Close()
+	if err := runUpdateFrom(&bytes.Buffer{}, server.Client(), server.URL, false); err != nil {
+		t.Fatalf("non-forced newer local version: %v", err)
+	}
+	err := runUpdateFrom(&bytes.Buffer{}, server.Client(), server.URL, true)
+	if err == nil || !strings.Contains(err.Error(), "缺少") {
+		t.Fatalf("forced reinstall error = %v", err)
+	}
+}
+
+func TestInstallUpdateUsesVerifiedArchiveExecutable(t *testing.T) {
+	var archive bytes.Buffer
+	writer := zip.NewWriter(&archive)
+	entry, err := writer.Create("yuxin-v99.0.0/yuxin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := entry.Write([]byte("new binary")); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(t.TempDir(), "yuxin")
+	if err := os.WriteFile(target, []byte("old binary"), 0o751); err != nil {
+		t.Fatal(err)
+	}
+	resolvedTarget, err := filepath.EvalSymlinks(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, pending := range []bool{false, true} {
+		var output bytes.Buffer
+		replacer := func(temporary, executable string) (bool, error) {
+			if executable != resolvedTarget {
+				t.Fatalf("target = %q", executable)
+			}
+			content, err := os.ReadFile(temporary)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(content) != "new binary" {
+				t.Fatalf("temporary content = %q", content)
+			}
+			return pending, nil
+		}
+		if err := installUpdate(archive.Bytes(), "v99.0.0", &output, target, replacer); err != nil {
+			t.Fatal(err)
+		}
+		if pending != strings.Contains(output.String(), "退出后") {
+			t.Fatalf("pending %t output = %q", pending, output.String())
+		}
+	}
+}
+
+func TestInstallUpdatePreservesReplacementError(t *testing.T) {
+	target := filepath.Join(t.TempDir(), "yuxin")
+	if err := os.WriteFile(target, []byte("old"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var archive bytes.Buffer
+	writer := zip.NewWriter(&archive)
+	entry, _ := writer.Create("yuxin")
+	entry.Write([]byte("new"))
+	writer.Close()
+	want := fmt.Errorf("replace denied")
+	err := installUpdate(archive.Bytes(), "v99.0.0", &bytes.Buffer{}, target, func(string, string) (bool, error) {
+		return false, want
+	})
+	if err == nil || !strings.Contains(err.Error(), want.Error()) {
+		t.Fatalf("installUpdate error = %v", err)
 	}
 }

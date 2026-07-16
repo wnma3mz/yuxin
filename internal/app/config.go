@@ -5,39 +5,52 @@ import (
 	_ "embed"
 	"errors"
 	"fmt"
+	"io"
 	"math"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 )
 
 //go:embed data/default-config.toml
 var bundledDefaultConfig []byte
 
+const (
+	maxConfigFileSize = 1 << 20
+	maxAssetItems     = 100
+	maxAssetNameRunes = 80
+)
+
 type Config struct {
-	RefreshInterval   time.Duration
-	RetirementYears   int
-	RetirementStart   time.Time
-	ProgressBirthDate time.Time
-	SalaryMode        string
-	SalaryAmount      float64
-	MonthlyWorkdays   float64
-	Workdays          map[time.Weekday]bool
-	StartSecond       int
-	EndSecond         int
-	LunchEnabled      bool
-	LunchStart        int
-	LunchEnd          int
-	ProfileEnabled    bool
-	BirthDate         time.Time
-	Sex               string
-	FemaleTrack       string
-	AssetsEnabled     bool
-	Assets            float64
-	AssetItems        []AssetItem
-	Reserve           float64
+	RefreshInterval    time.Duration
+	RetirementYears    int
+	RetirementStart    time.Time
+	ProgressBirthDate  time.Time
+	RetirementMode     string
+	RetirementUnit     string
+	SalaryMode         string
+	SalaryAmount       float64
+	MonthlyWorkdays    float64
+	Workdays           map[time.Weekday]bool
+	StartSecond        int
+	EndSecond          int
+	LunchEnabled       bool
+	LunchStart         int
+	LunchEnd           int
+	ProfileEnabled     bool
+	BirthDate          time.Time
+	Sex                string
+	FemaleTrack        string
+	AssetsEnabled      bool
+	Assets             float64
+	AssetItems         []AssetItem
+	Reserve            float64
+	HideAmounts        bool
+	HideRetirementDate bool
 }
 
 type AssetItem struct {
@@ -54,6 +67,8 @@ func defaultConfig() Config {
 		RetirementYears:   0,
 		RetirementStart:   today,
 		ProgressBirthDate: birth,
+		RetirementMode:    "full",
+		RetirementUnit:    "days",
 		SalaryMode:        "monthly",
 		SalaryAmount:      8000,
 		MonthlyWorkdays:   22,
@@ -81,11 +96,22 @@ func loadConfig(path string) (Config, error) {
 		return config, validateConfig(config)
 	}
 
+	info, err := os.Stat(path)
+	if err != nil {
+		return config, err
+	}
+	if !info.Mode().IsRegular() {
+		return config, fmt.Errorf("配置路径不是普通文件")
+	}
+	if info.Size() > maxConfigFileSize {
+		return config, fmt.Errorf("配置文件不能超过 %d KiB", maxConfigFileSize/1024)
+	}
 	file, err := os.Open(path)
 	if err != nil {
 		return config, err
 	}
 	defer file.Close()
+	limited := &io.LimitedReader{R: file, N: maxConfigFileSize + 1}
 
 	section := ""
 	sawAssets := false
@@ -94,7 +120,7 @@ func loadConfig(path string) (Config, error) {
 	sawProfileSex := false
 	assetIndex := -1
 	seenKeys := make(map[string]bool)
-	scanner := bufio.NewScanner(file)
+	scanner := bufio.NewScanner(limited)
 	for lineNumber := 1; scanner.Scan(); lineNumber++ {
 		line := strings.TrimSpace(stripComment(scanner.Text()))
 		if line == "" {
@@ -113,6 +139,9 @@ func loadConfig(path string) (Config, error) {
 				sawAssets = true
 			}
 			if section == "assets" {
+				if len(config.AssetItems) >= maxAssetItems {
+					return config, fmt.Errorf("资产账户不能超过 %d 个", maxAssetItems)
+				}
 				config.AssetItems = append(config.AssetItems, AssetItem{Name: "未命名账户", Kind: "other"})
 				assetIndex = len(config.AssetItems) - 1
 			}
@@ -120,7 +149,7 @@ func loadConfig(path string) (Config, error) {
 		}
 		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
 			section = strings.TrimSpace(line[1 : len(line)-1])
-			if section != "salary" && section != "schedule" && section != "profile" {
+			if section != "salary" && section != "schedule" && section != "profile" && section != "privacy" {
 				return config, fmt.Errorf("第 %d 行不支持配置表 %s", lineNumber, section)
 			}
 			if section == "profile" {
@@ -186,6 +215,9 @@ func loadConfig(path string) (Config, error) {
 	if err := scanner.Err(); err != nil {
 		return config, err
 	}
+	if limited.N <= 0 {
+		return config, fmt.Errorf("配置文件不能超过 %d KiB", maxConfigFileSize/1024)
+	}
 
 	// Enable flags only control defaults. An explicitly supplied table/array takes
 	// precedence over the corresponding flag.
@@ -244,6 +276,8 @@ func saveConfig(config Config, path string) error {
 		"retirement_years = " + strconv.Itoa(config.RetirementYears),
 		"retirement_start_date = " + q(config.RetirementStart.Format("2006-01-02")),
 		"progress_birth_date = " + q(config.ProgressBirthDate.Format("2006-01-02")),
+		"retirement_mode = " + q(config.RetirementMode),
+		"retirement_unit = " + q(config.RetirementUnit),
 		"reserve = " + q(configNumber(config.Reserve)),
 		"assets_enabled = " + strconv.FormatBool(config.AssetsEnabled),
 		"profile_enabled = " + strconv.FormatBool(config.ProfileEnabled),
@@ -260,6 +294,10 @@ func saveConfig(config Config, path string) error {
 		"lunch_enabled = " + strconv.FormatBool(config.LunchEnabled),
 		"lunch_start = " + q(clock(config.LunchStart)),
 		"lunch_end = " + q(clock(config.LunchEnd)),
+		"",
+		"[privacy]",
+		"hide_amounts = " + strconv.FormatBool(config.HideAmounts),
+		"hide_retirement_date = " + strconv.FormatBool(config.HideRetirementDate),
 	}
 	if config.ProfileEnabled {
 		lines = append(lines, "", "[profile]",
@@ -316,11 +354,13 @@ func supportedConfigKey(section, key string) bool {
 	supported := map[string]bool{
 		".version": true, ".refresh_interval": true, ".retirement_years": true,
 		".retirement_start_date": true, ".progress_birth_date": true, ".reserve": true,
+		".retirement_mode": true, ".retirement_unit": true,
 		".assets_enabled": true, ".profile_enabled": true,
 		"salary.mode": true, "salary.amount": true, "salary.monthly_workdays": true,
 		"schedule.workdays": true, "schedule.start": true, "schedule.end": true,
 		"schedule.lunch_enabled": true, "schedule.lunch_start": true, "schedule.lunch_end": true,
 		"profile.birth_date": true, "profile.sex": true, "profile.female_track": true,
+		"privacy.hide_amounts": true, "privacy.hide_retirement_date": true,
 		"assets.name": true, "assets.kind": true, "assets.balance": true,
 	}
 	return supported[section+"."+key]
@@ -357,6 +397,10 @@ func applyConfigValue(config *Config, section, key, value string) error {
 			return err
 		}
 		config.ProgressBirthDate = parsed
+	case ".retirement_mode":
+		config.RetirementMode = value
+	case ".retirement_unit":
+		config.RetirementUnit = value
 	case ".reserve":
 		amount, err := parseAmount(value)
 		if err != nil {
@@ -435,6 +479,18 @@ func applyConfigValue(config *Config, section, key, value string) error {
 		config.Sex = value
 	case "profile.female_track":
 		config.FemaleTrack = value
+	case "privacy.hide_amounts":
+		enabled, err := parseBool(value)
+		if err != nil {
+			return err
+		}
+		config.HideAmounts = enabled
+	case "privacy.hide_retirement_date":
+		enabled, err := parseBool(value)
+		if err != nil {
+			return err
+		}
+		config.HideRetirementDate = enabled
 	case "assets.balance":
 		amount, err := parseAmount(value)
 		if err != nil {
@@ -567,6 +623,12 @@ func validateConfig(config Config) error {
 	if config.RetirementYears < 0 || config.RetirementYears > 100 {
 		return fmt.Errorf("默认退休年数必须在 0 到 100 之间")
 	}
+	if config.RetirementMode != "full" && config.RetirementMode != "countdown" {
+		return fmt.Errorf("退休显示模式必须是 full 或 countdown")
+	}
+	if config.RetirementUnit != "years" && config.RetirementUnit != "months" && config.RetirementUnit != "days" && config.RetirementUnit != "workdays" {
+		return fmt.Errorf("退休单位必须是 years、months、days 或 workdays")
+	}
 	if config.ProgressBirthDate.After(configDateOnly(time.Now())) {
 		return fmt.Errorf("进度出生日期不能晚于今天")
 	}
@@ -608,9 +670,18 @@ func validateConfig(config Config) error {
 	if config.Assets < 0 {
 		return fmt.Errorf("资产余额不能小于 0")
 	}
+	if len(config.AssetItems) > maxAssetItems {
+		return fmt.Errorf("资产账户不能超过 %d 个", maxAssetItems)
+	}
 	for _, item := range config.AssetItems {
 		if item.Balance < 0 {
 			return fmt.Errorf("资产余额不能小于 0")
+		}
+		if utf8.RuneCountInString(item.Name) > maxAssetNameRunes {
+			return fmt.Errorf("账户名称不能超过 %d 个字符", maxAssetNameRunes)
+		}
+		if strings.IndexFunc(item.Name, unicode.IsControl) >= 0 {
+			return fmt.Errorf("账户名称不能包含控制字符")
 		}
 	}
 	return nil

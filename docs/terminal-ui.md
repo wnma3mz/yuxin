@@ -85,6 +85,8 @@ yuxin                 启动自动刷新仪表盘，默认每 1 秒刷新
 yuxin --interval 2    临时改为每 2 秒刷新
 yuxin once            输出一次快照后退出，方便脚本和 shell prompt 使用
 yuxin config          进入交互式配置
+yuxin share           生成默认合成数据的纯文本分享卡
+yuxin web             打开仅监听本机的轻量浏览器入口
 yuxin doctor          检查配置、终端能力和可选数据源
 yuxin update          校验并安装 GitHub 最新正式版
 ```
@@ -93,7 +95,7 @@ yuxin update          校验并安装 GitHub 最新正式版
 
 ```text
 e  编辑配置     r  立即刷新     s  切换隐私演示
-d  查看计算口径 ?  快捷键帮助   q  安全退出
+u  退休单位     d  查看计算口径 ?  快捷键帮助   q  安全退出
 ```
 
 刷新间隔默认是 `1.0` 秒，可在配置文件中长期修改，也可用 `--interval` 对本次运行临时覆盖。每次刷新重新计算实时收入，但不使用额外的高频动画。检测到非交互终端或输出被管道接收时，自动退化为 `once` 模式，避免 ANSI 控制符污染日志。

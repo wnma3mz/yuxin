@@ -45,8 +45,10 @@ func configureConfig(input io.Reader, output io.Writer, path string, current Con
 			updated, err = wizard.editRetirement(current)
 		case "5":
 			updated, err = wizard.editAssets(current)
+		case "6":
+			updated, err = wizard.editPrivacy(current)
 		default:
-			fmt.Fprintln(output, "  请输入 0 到 5。")
+			fmt.Fprintln(output, "  请输入 0 到 6。")
 			continue
 		}
 		if err != nil {
@@ -68,16 +70,29 @@ func (wizard configWizard) summary(config Config) {
 	mode := map[string]string{"monthly": "月薪", "daily": "日薪", "hourly": "时薪"}[config.SalaryMode]
 	retirement := "关闭"
 	if config.ProfileEnabled {
-		retirement = config.BirthDate.Format("2006-01-02") + "，" + map[bool]string{true: "男", false: "女"}[config.Sex == "male"]
+		if config.HideRetirementDate {
+			retirement = "已配置（日期隐藏）"
+		} else {
+			retirement = config.BirthDate.Format("2006-01-02") + "，" + map[bool]string{true: "男", false: "女"}[config.Sex == "male"]
+		}
 	} else if config.RetirementYears > 0 {
 		retirement = fmt.Sprintf("默认 %d 年", config.RetirementYears)
 	}
 	fmt.Fprintln(wizard.out, "\n当前配置")
-	fmt.Fprintf(wizard.out, "  1 薪资      %s %s\n", mode, money(config.SalaryAmount))
+	fmt.Fprintf(wizard.out, "  1 薪资      %s %s\n", mode, displayMoney(config.SalaryAmount, config.HideAmounts))
 	fmt.Fprintf(wizard.out, "  2 工作时间  %s–%s，周 %s\n", clock(config.StartSecond), clock(config.EndSecond), workdayText(config.Workdays))
 	fmt.Fprintf(wizard.out, "  3 刷新      %s\n", formatInterval(config.RefreshInterval))
 	fmt.Fprintf(wizard.out, "  4 退休      %s\n", retirement)
-	fmt.Fprintf(wizard.out, "  5 资产      %d 个账户，合计 %s\n", len(config.AssetItems), money(config.Assets))
+	fmt.Fprintf(wizard.out, "  5 资产      %d 个账户，合计 %s\n", len(config.AssetItems), displayMoney(config.Assets, config.HideAmounts))
+	privacy := "显示全部"
+	if config.HideAmounts && config.HideRetirementDate {
+		privacy = "隐藏金额和退休年月"
+	} else if config.HideAmounts {
+		privacy = "隐藏金额"
+	} else if config.HideRetirementDate {
+		privacy = "隐藏退休年月"
+	}
+	fmt.Fprintf(wizard.out, "  6 隐私显示  %s\n", privacy)
 }
 
 func (wizard configWizard) editSalary(config Config) (Config, error) {
@@ -154,16 +169,24 @@ func (wizard configWizard) editRetirement(config Config) (Config, error) {
 	fmt.Fprintln(wizard.out, "\n退休设置")
 	fmt.Fprintln(wizard.out, "1. 输入身份证号码（自动解析出生日期和性别）")
 	fmt.Fprintln(wizard.out, "2. 手动填写出生日期和性别")
-	fmt.Fprintln(wizard.out, "3. 关闭退休模块")
+	fmt.Fprintln(wizard.out, "3. 修改显示模式和单位")
+	fmt.Fprintln(wizard.out, "4. 关闭退休模块")
 	fmt.Fprintln(wizard.out, "0. 返回")
-	choice, err := wizard.choice("选择", "0", "0", "1", "2", "3")
+	choice, err := wizard.choice("选择", "0", "0", "1", "2", "3", "4")
 	if err != nil || choice == "0" {
 		return config, err
 	}
-	if choice == "3" {
+	if choice == "4" {
 		config.ProfileEnabled = false
 		config.RetirementYears = 0
 		return config, nil
+	}
+	if choice == "3" {
+		if !config.ProfileEnabled && config.RetirementYears == 0 {
+			fmt.Fprintln(wizard.out, "  请先启用退休模块。")
+			return config, nil
+		}
+		return wizard.editRetirementDisplay(config)
 	}
 	var birth time.Time
 	sex := ""
@@ -225,7 +248,36 @@ func (wizard configWizard) editRetirement(config Config) (Config, error) {
 		}
 	}
 	fmt.Fprintf(wizard.out, "  已解析：%s，%s\n", birth.Format("2006-01-02"), map[bool]string{true: "男", false: "女"}[sex == "male"])
+	return wizard.editRetirementDisplay(config)
+}
+
+func (wizard configWizard) editRetirementDisplay(config Config) (Config, error) {
+	modeDefault := "1"
+	if config.RetirementMode == "countdown" {
+		modeDefault = "2"
+	}
+	mode, err := wizard.choice("显示模式：1 完整 / 2 轻量（只显示距离）", modeDefault, "1", "2")
+	if err != nil {
+		return config, err
+	}
+	config.RetirementMode = map[string]string{"1": "full", "2": "countdown"}[mode]
+	unitDefault := map[string]string{"years": "1", "months": "2", "days": "3", "workdays": "4"}[config.RetirementUnit]
+	unit, err := wizard.choice("距离单位：1 年 / 2 月 / 3 日 / 4 工作日", unitDefault, "1", "2", "3", "4")
+	if err != nil {
+		return config, err
+	}
+	config.RetirementUnit = map[string]string{"1": "years", "2": "months", "3": "days", "4": "workdays"}[unit]
 	return config, nil
+}
+
+func (wizard configWizard) editPrivacy(config Config) (Config, error) {
+	var err error
+	config.HideAmounts, err = wizard.yesNo("在仪表盘隐藏全部金额", config.HideAmounts)
+	if err != nil {
+		return config, err
+	}
+	config.HideRetirementDate, err = wizard.yesNo("隐藏预计退休年月", config.HideRetirementDate)
+	return config, err
 }
 
 func (wizard configWizard) editAssets(config Config) (Config, error) {

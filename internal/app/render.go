@@ -22,7 +22,7 @@ func renderDashboard(snapshot DashboardSnapshot, config Config, terminalWidth, t
 		width = 80
 	}
 	if width < 24 {
-		return renderTiny(snapshot, width)
+		return renderTiny(snapshot, config, width)
 	}
 	if width > 110 {
 		width = 110
@@ -51,20 +51,20 @@ func renderDashboard(snapshot DashboardSnapshot, config Config, terminalWidth, t
 	lines := []string{top, header, "├" + strings.Repeat("─", width-2) + "┤"}
 	lines = append(lines,
 		"│"+pad("今日入账", width-2, alignCenter)+"│",
-		"│"+pad(color(money(snapshot.Salary.EarnedToday), "1;38;5;214", useColor), width-2, alignCenter)+"│",
-		"│"+pad(color(incomeHint(snapshot.Salary), "90", useColor), width-2, alignCenter)+"│",
+		"│"+pad(color(displayMoney(snapshot.Salary.EarnedToday, config.HideAmounts), "1;38;5;214", useColor), width-2, alignCenter)+"│",
+		"│"+pad(color(incomeHintForDisplay(snapshot.Salary, config.HideAmounts), "90", useColor), width-2, alignCenter)+"│",
 	)
 
 	if width >= 70 {
 		metrics := threeColumns(
 			"已工作 "+duration(snapshot.Salary.ElapsedSeconds),
 			remainingText(snapshot.Salary),
-			"今日预计 "+money(snapshot.Salary.ExpectedToday),
+			"今日预计 "+displayMoney(snapshot.Salary.ExpectedToday, config.HideAmounts),
 			inner,
 		)
 		lines = append(lines, "│ "+metrics+" │")
 	} else {
-		compact := "下班 " + duration(snapshot.Salary.RemainingSeconds) + "  预计 " + money(snapshot.Salary.ExpectedToday)
+		compact := "下班 " + duration(snapshot.Salary.RemainingSeconds) + "  预计 " + displayMoney(snapshot.Salary.ExpectedToday, config.HideAmounts)
 		lines = append(lines, "│ "+pad(truncate(compact, inner), inner, alignLeft)+" │")
 	}
 
@@ -99,24 +99,28 @@ func renderDashboard(snapshot DashboardSnapshot, config Config, terminalWidth, t
 	}
 	retirementRows := []string{}
 	if snapshot.RetirementEnabled {
-		retirementRows = append(retirementRows,
-			metric("预计退休", retirementDate(snapshot.Retirement), leftWidth-4),
-			metric("距离退休", commaInt(snapshot.Retirement.RemainingDays)+" 天", leftWidth-4),
-			metric("剩余工作日", commaInt(snapshot.RemainingWorkdays)+" 天", leftWidth-4),
-		)
-		if snapshot.AssetsEnabled {
-			retirementRows = append(retirementRows, metric("现在退休每天可花", money(snapshot.DailyUntilRetirement), leftWidth-4))
+		if config.RetirementMode == "full" && !config.HideRetirementDate {
+			retirementRows = append(retirementRows, metric("预计退休", retirementDate(snapshot.Retirement), leftWidth-4))
 		}
-		retirementRows = append(retirementRows, retirementProgress(snapshot.Retirement.Progress, leftWidth-4, useColor))
+		retirementRows = append(retirementRows, metric("距离退休", retirementDistance(snapshot, config.RetirementUnit), leftWidth-4))
+		if config.RetirementMode == "full" && config.RetirementUnit != "workdays" {
+			retirementRows = append(retirementRows, metric("剩余工作日", commaInt(snapshot.RemainingWorkdays)+" 天", leftWidth-4))
+		}
+		if snapshot.AssetsEnabled {
+			retirementRows = append(retirementRows, metric("现在退休每天可花", displayMoney(snapshot.DailyUntilRetirement, config.HideAmounts), leftWidth-4))
+		}
+		if config.RetirementMode == "full" {
+			retirementRows = append(retirementRows, retirementProgress(snapshot.Retirement.Progress, leftWidth-4, useColor))
+		}
 	}
 	assetRows := []string{}
 	if snapshot.AssetsEnabled {
 		assetRows = append(assetRows,
-			metric("配置余额", money(snapshot.TotalAssets), rightWidth-4),
-			metric("今日工资", "+"+money(snapshot.Salary.EarnedToday), rightWidth-4),
-			metric("实时余额", money(snapshot.LiveBalance), rightWidth-4),
-			metric("应急保留金", money(config.Reserve), rightWidth-4),
-			metric("可支配余额", money(snapshot.SpendableAssets), rightWidth-4),
+			metric("配置余额", displayMoney(snapshot.TotalAssets, config.HideAmounts), rightWidth-4),
+			metric("今日工资", "+"+displayMoney(snapshot.Salary.EarnedToday, config.HideAmounts), rightWidth-4),
+			metric("实时余额", displayMoney(snapshot.LiveBalance, config.HideAmounts), rightWidth-4),
+			metric("应急保留金", displayMoney(config.Reserve, config.HideAmounts), rightWidth-4),
+			metric("可支配余额", displayMoney(snapshot.SpendableAssets, config.HideAmounts), rightWidth-4),
 		)
 	}
 	showPanels := !details && !helpVisible
@@ -135,12 +139,14 @@ func renderDashboard(snapshot DashboardSnapshot, config Config, terminalWidth, t
 	if showPanels && compactLayout {
 		compactRows := []string{}
 		if snapshot.RetirementEnabled {
-			compactRows = append(compactRows, fmt.Sprintf("退休 %s · %s 天",
-				snapshot.Retirement.RetirementMonth.Format("2006-01"),
-				commaInt(snapshot.Retirement.RemainingDays)))
+			text := "退休还有 " + retirementDistance(snapshot, config.RetirementUnit)
+			if config.RetirementMode == "full" && !config.HideRetirementDate {
+				text = "退休 " + snapshot.Retirement.RetirementMonth.Format("2006-01") + " · " + retirementDistance(snapshot, config.RetirementUnit)
+			}
+			compactRows = append(compactRows, text)
 		}
 		if snapshot.RetirementEnabled && snapshot.AssetsEnabled {
-			compactRows = append(compactRows, "现在退休每天可花 "+money(snapshot.DailyUntilRetirement))
+			compactRows = append(compactRows, "现在退休每天可花 "+displayMoney(snapshot.DailyUntilRetirement, config.HideAmounts))
 		}
 		if len(compactRows) > 0 {
 			lines = append(lines, panel("未来", compactRows, width)...)
@@ -160,7 +166,7 @@ func renderDashboard(snapshot DashboardSnapshot, config Config, terminalWidth, t
 	}
 	if details {
 		lines = append(lines, panel("计算口径", []string{
-			fmt.Sprintf("时薪 %s · 日薪 %s", money(snapshot.Salary.HourlyRate), money(snapshot.Salary.DailyRate)),
+			fmt.Sprintf("时薪 %s · 日薪 %s", displayMoney(snapshot.Salary.HourlyRate, config.HideAmounts), displayMoney(snapshot.Salary.DailyRate, config.HideAmounts)),
 			"退休天数口径：距离预计退休月第一天；工作日口径使用随包节假日数据。",
 			"退休进度统一按 18 岁起计，不需要收集参加工作时间。",
 			"今日工资与实时余额按秒更新；未来口径不含个税、奖金、利息、通胀和养老金。",
@@ -169,10 +175,10 @@ func renderDashboard(snapshot DashboardSnapshot, config Config, terminalWidth, t
 	if helpVisible {
 		lines = append(lines, panel("快捷键", []string{
 			"e 编辑配置   r 立即刷新   s 隐私演示",
-			"d 计算口径   ? 帮助       q 退出",
+			"u 退休单位   d 计算口径   ? 帮助   q 退出",
 		}, width)...)
 	}
-	footer := "[e] 配置  [r] 刷新  [s] 演示  [d] 详情  [?] 帮助  [q] 退出"
+	footer := "[e] 配置  [r] 刷新  [s] 演示  [u] 单位  [d] 详情  [?] 帮助  [q] 退出"
 	if width < 70 {
 		footer = "[e] 配置  [s] 演示  [q] 退出"
 	}
@@ -180,20 +186,20 @@ func renderDashboard(snapshot DashboardSnapshot, config Config, terminalWidth, t
 	return strings.Join(lines, "\n")
 }
 
-func renderTiny(snapshot DashboardSnapshot, width int) string {
+func renderTiny(snapshot DashboardSnapshot, config Config, width int) string {
 	title := "余薪 YUXIN"
 	if snapshot.DemoMode {
 		title += " · 演示"
 	}
 	lines := []string{
 		title,
-		money(snapshot.Salary.EarnedToday),
+		displayMoney(snapshot.Salary.EarnedToday, config.HideAmounts),
 		remainingText(snapshot.Salary),
 	}
 	if snapshot.RetirementEnabled {
-		lines = append(lines, fmt.Sprintf("退休还有 %s 天", commaInt(snapshot.Retirement.RemainingDays)))
+		lines = append(lines, "退休还有 "+retirementDistance(snapshot, config.RetirementUnit))
 		if snapshot.AssetsEnabled {
-			lines = append(lines, "每天可花 "+money(snapshot.DailyUntilRetirement))
+			lines = append(lines, "每天可花 "+displayMoney(snapshot.DailyUntilRetirement, config.HideAmounts))
 		}
 	}
 	if snapshot.Holiday != nil {
@@ -206,10 +212,10 @@ func renderTiny(snapshot DashboardSnapshot, width int) string {
 	return strings.Join(lines, "\n")
 }
 
-func incomeHint(salary SalarySnapshot) string {
+func incomeHintForDisplay(salary SalarySnapshot, hideAmounts bool) string {
 	switch salary.Status {
 	case "working":
-		return "↗ +" + money(salary.HourlyRate/3600) + " / 秒"
+		return "↗ +" + displayMoney(salary.HourlyRate/3600, hideAmounts) + " / 秒"
 	case "lunch-break":
 		return "午休暂停增长"
 	case "after-work":
@@ -218,6 +224,26 @@ func incomeHint(salary SalarySnapshot) string {
 		return "等待上班"
 	default:
 		return "今天好好休息"
+	}
+}
+
+func displayMoney(value float64, hidden bool) string {
+	if hidden {
+		return "¥••••"
+	}
+	return money(value)
+}
+
+func retirementDistance(snapshot DashboardSnapshot, unit string) string {
+	switch unit {
+	case "years":
+		return fmt.Sprintf("%.1f 年", float64(snapshot.Retirement.RemainingDays)/365.2425)
+	case "months":
+		return fmt.Sprintf("%.1f 个月", float64(snapshot.Retirement.RemainingDays)/30.436875)
+	case "workdays":
+		return commaInt(snapshot.RemainingWorkdays) + " 个工作日"
+	default:
+		return commaInt(snapshot.Retirement.RemainingDays) + " 天"
 	}
 }
 

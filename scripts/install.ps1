@@ -7,16 +7,42 @@ if ($architecture -ne "X64") {
 }
 
 $asset = "yuxin-windows-x86_64.zip"
-$base = "$repository/releases/latest/download"
+$base = if ($env:YUXIN_RELEASE_BASE) {
+    $env:YUXIN_RELEASE_BASE.TrimEnd("/", "\")
+} else {
+    "$repository/releases/latest/download"
+}
 $temporary = Join-Path ([System.IO.Path]::GetTempPath()) ("yuxin-" + [guid]::NewGuid())
 New-Item -ItemType Directory -Path $temporary | Out-Null
+
+function Receive-ReleaseFile {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string] $Name,
+        [Parameter(Mandatory = $true)]
+        [string] $Destination
+    )
+
+    if (Test-Path -LiteralPath $base -PathType Container) {
+        Copy-Item -LiteralPath (Join-Path $base $Name) -Destination $Destination
+        return
+    }
+
+    $baseUri = $null
+    if ([Uri]::TryCreate($base, [UriKind]::Absolute, [ref] $baseUri) -and $baseUri.IsFile) {
+        Copy-Item -LiteralPath (Join-Path $baseUri.LocalPath $Name) -Destination $Destination
+        return
+    }
+
+    Invoke-WebRequest -UseBasicParsing "$base/$Name" -OutFile $Destination
+}
 
 try {
     $archive = Join-Path $temporary $asset
     $checksumFile = "$archive.sha256"
     Write-Host "正在下载 Yuxin 最新正式版（windows/x86_64）…"
-    Invoke-WebRequest -UseBasicParsing "$base/$asset" -OutFile $archive
-    Invoke-WebRequest -UseBasicParsing "$base/$asset.sha256" -OutFile $checksumFile
+    Receive-ReleaseFile -Name $asset -Destination $archive
+    Receive-ReleaseFile -Name "$asset.sha256" -Destination $checksumFile
 
     $expected = ((Get-Content $checksumFile -First 1) -split "\s+")[0].ToLowerInvariant()
     $actual = (Get-FileHash -Algorithm SHA256 $archive).Hash.ToLowerInvariant()
@@ -39,12 +65,14 @@ try {
     New-Item -ItemType Directory -Force -Path $installDirectory | Out-Null
     Copy-Item -Force $executable.FullName (Join-Path $installDirectory "yuxin.exe")
 
-    $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
-    $entries = @($userPath -split ";" | Where-Object { $_ })
-    if ($entries -notcontains $installDirectory) {
-        $newPath = (@($entries) + $installDirectory) -join ";"
-        [Environment]::SetEnvironmentVariable("Path", $newPath, "User")
-        Write-Host "已将 $installDirectory 加入用户 PATH，请重新打开终端。"
+    if (-not $env:YUXIN_SKIP_PATH) {
+        $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+        $entries = @($userPath -split ";" | Where-Object { $_ })
+        if ($entries -notcontains $installDirectory) {
+            $newPath = (@($entries) + $installDirectory) -join ";"
+            [Environment]::SetEnvironmentVariable("Path", $newPath, "User")
+            Write-Host "已将 $installDirectory 加入用户 PATH，请重新打开终端。"
+        }
     }
     Write-Host "已安装到 $installDirectory\yuxin.exe"
 } finally {
