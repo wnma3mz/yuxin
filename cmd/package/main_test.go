@@ -64,7 +64,7 @@ func TestDesktopLaunchersMatchPlatforms(t *testing.T) {
 	}
 
 	linux := launcherByName(t, "linux-x86_64", "Open-Yuxin.desktop")
-	if linux.mode != 0o755 || !strings.Contains(linux.content, `entry=\\$1`) || !strings.Contains(linux.content, `exec ./yuxin web" sh %k`) || !strings.Contains(linux.content, "Terminal=false") {
+	if linux.mode != 0o755 || !strings.Contains(linux.content, `entry=\\$1`) || !strings.Contains(linux.content, `\\$GIO_LAUNCHED_DESKTOP_FILE`) || !strings.Contains(linux.content, `exec ./yuxin web" sh %k`) || !strings.Contains(linux.content, "Terminal=false") {
 		t.Fatalf("invalid Linux launcher: %#v", linux)
 	}
 

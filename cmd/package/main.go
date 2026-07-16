@@ -170,7 +170,7 @@ const linuxLauncherDesktop = `[Desktop Entry]
 Type=Application
 Name=Yuxin
 Comment=Open the local Yuxin dashboard
-Exec=sh -c "entry=\\$1; case \\"\\$entry\\" in file://*) entry=\\${entry#file://} ;; \\"\\") entry=Open-Yuxin.desktop ;; esac; cd \\"\\$(dirname \\"\\$entry\\")\\" && exec ./yuxin web" sh %k
+Exec=sh -c "entry=\\$1; [ -n \\"\\$entry\\" ] || entry=\\$GIO_LAUNCHED_DESKTOP_FILE; [ -n \\"\\$entry\\" ] || entry=\\$PWD/Open-Yuxin.desktop; case \\"\\$entry\\" in file://*) entry=\\${entry#file://} ;; esac; cd \\"\\$(dirname \\"\\$entry\\")\\" && exec ./yuxin web" sh %k
 Terminal=false
 Categories=Utility;
 `

@@ -253,7 +253,11 @@ func TestForcedUpdateCanReinstallOlderLatestRelease(t *testing.T) {
 func TestInstallUpdateUsesVerifiedArchiveExecutable(t *testing.T) {
 	var archive bytes.Buffer
 	writer := zip.NewWriter(&archive)
-	entry, err := writer.Create("yuxin-v99.0.0/yuxin")
+	archiveExecutable := "yuxin"
+	if runtime.GOOS == "windows" {
+		archiveExecutable += ".exe"
+	}
+	entry, err := writer.Create("yuxin-v99.0.0/" + archiveExecutable)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -302,7 +306,11 @@ func TestInstallUpdatePreservesReplacementError(t *testing.T) {
 	}
 	var archive bytes.Buffer
 	writer := zip.NewWriter(&archive)
-	entry, _ := writer.Create("yuxin")
+	archiveExecutable := "yuxin"
+	if runtime.GOOS == "windows" {
+		archiveExecutable += ".exe"
+	}
+	entry, _ := writer.Create(archiveExecutable)
 	entry.Write([]byte("new"))
 	writer.Close()
 	want := fmt.Errorf("replace denied")
