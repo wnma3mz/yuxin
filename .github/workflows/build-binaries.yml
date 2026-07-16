@@ -77,7 +77,7 @@ jobs:
         run: |
           unzip -q release/*.zip -d launcher-check
           root="$(find launcher-check -mindepth 1 -maxdepth 1 -type d -print -quit)"
-          desktop="$root/Open-Yuxin.desktop"
+          desktop="$(realpath "$root/Open-Yuxin.desktop")"
           test -x "$desktop"
           sudo apt-get update
           sudo apt-get install --yes desktop-file-utils libglib2.0-bin
@@ -85,7 +85,7 @@ jobs:
           # shellcheck disable=SC2016
           printf '#!/bin/sh\nprintf "%%s" "$*" > "$YUXIN_LAUNCHER_PROBE"\n' > "$root/yuxin"
           chmod 755 "$root/yuxin"
-          YUXIN_LAUNCHER_PROBE="$RUNNER_TEMP/launcher-args" gio launch "$desktop"
+          GIO_LAUNCHED_DESKTOP_FILE="$desktop" YUXIN_LAUNCHER_PROBE="$RUNNER_TEMP/launcher-args" gio launch "$desktop"
           for _ in $(seq 1 50); do
             test -f "$RUNNER_TEMP/launcher-args" && break
             sleep 0.1
