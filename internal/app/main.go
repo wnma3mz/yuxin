@@ -1,4 +1,4 @@
-package main
+package app
 
 import (
 	_ "embed"
@@ -28,8 +28,9 @@ type cliOptions struct {
 	showHelp       bool
 }
 
-func main() {
-	os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
+// Run executes the Yuxin command and returns its process exit code.
+func Run(args []string, stdin, stdout, stderr *os.File) int {
+	return run(args, stdin, stdout, stderr)
 }
 
 func run(args []string, stdin, stdout, stderr *os.File) int {

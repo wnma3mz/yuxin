@@ -47,7 +47,7 @@ jobs:
       - name: Prepare output directory
         run: mkdir dist
       - name: Build standalone executable
-        run: go build -trimpath -ldflags="-s -w -buildid=" -o "${{ matrix.executable }}" .
+        run: go build -trimpath -ldflags="-s -w -buildid=" -o "${{ matrix.executable }}" ./cmd/yuxin
       - name: Smoke test
         run: ${{ matrix.smoke }}
       - name: Package release archive

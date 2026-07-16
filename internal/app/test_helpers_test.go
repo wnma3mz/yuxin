@@ -1,4 +1,4 @@
-package main
+package app
 
 func testFullConfig() Config {
 	config := defaultConfig()

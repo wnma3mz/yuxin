@@ -2,11 +2,12 @@
 
 ## 目标
 
-本版本聚焦最新版获取、隐私安全的功能展示，以及更直观的退休进度。保持单一 Go CLI、标准库实现和现有根包结构。
+本版本聚焦最新版获取、隐私安全的功能展示，以及更直观的退休进度。保持单一 Go CLI 和标准库实现。
 
 ## 实施项
 
 - [x] 将 GitHub 社区文件收纳到 `.github/`，不引入 `src/` 目录。
+- [x] 采用最小标准 Go 布局：入口放入 `cmd/yuxin/`，应用代码和同包测试放入 `internal/app/`。
 - [x] 新增 `yuxin update`，从 GitHub 最新正式 Release 下载当前平台的 CLI。
 - [x] 下载后校验 Release 中的 SHA-256，再替换当前程序。
 - [x] Release 产物使用稳定文件名，README 通过 `/releases/latest/download/...` 直达最新 ZIP。

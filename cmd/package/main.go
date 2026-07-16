@@ -20,7 +20,7 @@ func main() {
 	if *executable == "" || *platform == "" {
 		fatalf("--executable and --platform are required")
 	}
-	versionBytes, err := os.ReadFile("VERSION")
+	versionBytes, err := os.ReadFile("internal/app/VERSION")
 	if err != nil {
 		fatalf("read VERSION: %v", err)
 	}
@@ -66,8 +66,8 @@ func createArchive(archivePath, base, platform, executable string) error {
 		mode os.FileMode
 	}{
 		{executable, executableName, 0o755},
-		{"data/default-config.toml", "yuxin.toml", 0o644},
-		{"data/holidays-2026.json", "holidays-2026.json", 0o644},
+		{"internal/app/data/default-config.toml", "yuxin.toml", 0o644},
+		{"internal/app/data/holidays-2026.json", "holidays-2026.json", 0o644},
 		{"README.md", "README.md", 0o644},
 		{"LICENSE", "LICENSE", 0o644},
 	}

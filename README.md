@@ -112,7 +112,7 @@ yuxin --version       显示版本号
 ```bash
 go test ./...
 go vet ./...
-go build -trimpath -ldflags="-s -w -buildid=" -o yuxin .
+go build -trimpath -ldflags="-s -w -buildid=" -o yuxin ./cmd/yuxin
 ./yuxin
 ```
 
@@ -120,7 +120,7 @@ go build -trimpath -ldflags="-s -w -buildid=" -o yuxin .
 
 ## 发布
 
-推送与根目录 `VERSION` 一致的版本标签后，GitHub Actions 会测试、构建并创建 Latest Release：
+推送与 `internal/app/VERSION` 一致的版本标签后，GitHub Actions 会测试、构建并创建 Latest Release：
 
 ```bash
 git tag v0.2.0
