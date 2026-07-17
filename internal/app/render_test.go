@@ -38,7 +38,7 @@ func TestRenderDashboardPlainSnapshot(t *testing.T) {
 	}
 
 	output := RenderDashboard(snapshot, config, 80, false)
-	for _, expected := range []string{"余薪 YUXIN", defaultSlogan, "今日入账", "¥286.37", "距离下班", "退休倒计时", "实时存款余额", "撑到退休每天可花", "撑到退休每月可花", "撑到退休每年可花", "[p] 隐私", "[v] 视图", "[q] 退出"} {
+	for _, expected := range []string{"余薪 YUXIN", defaultSlogan, "今日入账", "¥286.37", "距离下班", "🏁 退休倒计时", "💰 存款", "实时存款余额", "每天可花", "每月可花", "[p] 隐私", "[v] 视图", "[q] 退出"} {
 		if !strings.Contains(output, expected) {
 			t.Errorf("rendered output does not contain %q", expected)
 		}
@@ -397,7 +397,7 @@ func TestStandard80By24TerminalDoesNotOverflow(t *testing.T) {
 	}
 	output := renderDashboard(snapshot, config, 80, 24, false, false)
 	lines := strings.Split(output, "\n")
-	if len(lines) > 24 || !strings.Contains(output, "退休倒计时") || !strings.Contains(output, "实时存款余额") {
+	if len(lines) > 24 || !strings.Contains(output, "╭─ 未来") || !strings.Contains(output, "退休还有") || !strings.Contains(output, "实时存款余额") {
 		t.Fatalf("80x24 layout uses %d lines:\n%s", len(lines), output)
 	}
 }
@@ -416,7 +416,7 @@ func TestPrivacySettingsHideDashboardFields(t *testing.T) {
 			t.Fatalf("privacy output leaked %q:\n%s", leaked, output)
 		}
 	}
-	if !strings.Contains(output, "¥••••") || !strings.Contains(output, "退休信息") || strings.Contains(output, "距离退休还有") || strings.Contains(output, "退休进度") {
+	if !strings.Contains(output, "¥••••") || !strings.Contains(output, "退休信息") || strings.Contains(output, "距离退休") || strings.Contains(output, "退休进度") {
 		t.Fatalf("privacy settings were not applied:\n%s", output)
 	}
 }
@@ -430,7 +430,7 @@ func TestAmountOnlyPrivacyKeepsRetirementData(t *testing.T) {
 		t.Fatal(err)
 	}
 	output := RenderDashboard(snapshot, config, 100, false)
-	if !strings.Contains(output, "¥••••") || !strings.Contains(output, "距离退休还有") || !strings.Contains(output, "退休进度") {
+	if !strings.Contains(output, "¥••••") || !strings.Contains(output, "距离退休") || !strings.Contains(output, "退休进度") {
 		t.Fatalf("amount-only privacy hid the wrong fields:\n%s", output)
 	}
 	for _, leaked := range []string{"¥227", "¥100,227"} {
@@ -460,6 +460,11 @@ func TestRetirementShowsIntegerTotalUnitsAndProgress(t *testing.T) {
 			t.Fatalf("retirement panel missing %q:\n%s", expected, output)
 		}
 	}
+	for _, expected := range []string{"🏁 退休倒计时", "距离退休", "按月计算", "按天计算"} {
+		if !strings.Contains(output, expected) {
+			t.Fatalf("退休卡片缺少 %q:\n%s", expected, output)
+		}
+	}
 	progressIndex := strings.Index(output, "退休进度")
 	yearsIndex := strings.Index(output, expectedValues[0])
 	if progressIndex < 0 || yearsIndex < 0 || progressIndex > yearsIndex {
@@ -475,6 +480,58 @@ func TestRetirementShowsIntegerTotalUnitsAndProgress(t *testing.T) {
 		Retirement: RetirementSnapshot{RetirementMonth: time.Date(2058, time.January, 1, 0, 0, 0, 0, time.Local)},
 	}); got != "31 年 5 个月 16 天" {
 		t.Fatalf("retirementDistance = %q", got)
+	}
+}
+
+func TestFuturePanelsUseParallelCopyAndMatchingHeights(t *testing.T) {
+	config := testFullConfig()
+	snapshot, err := CalculateDashboard(time.Date(2026, time.July, 16, 15, 0, 0, 0, time.Local), config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	output := renderDashboard(snapshot, config, 110, 30, false, false)
+	for _, expected := range []string{
+		"🏁 退休倒计时", "💰 存款 ·", "如果现在躺平：",
+		"├─ 每天可花", "└─ 每月可花",
+	} {
+		if !strings.Contains(output, expected) {
+			t.Fatalf("未来卡片缺少 %q:\n%s", expected, output)
+		}
+	}
+	lines := strings.Split(output, "\n")
+	for _, line := range lines {
+		if strings.Contains(line, "└─ 按天计算") && !strings.Contains(line, "└─ 每月可花") {
+			t.Fatalf("并排卡片未对齐:\n%s", output)
+		}
+	}
+	if strings.Contains(output, "每年可花") {
+		t.Fatalf("存款卡片不应重复展示年度换算:\n%s", output)
+	}
+}
+
+func TestFuturePanelsUseSemanticColors(t *testing.T) {
+	config := testFullConfig()
+	snapshot, err := CalculateDashboard(time.Date(2026, time.July, 16, 15, 0, 0, 0, time.Local), config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	output := renderDashboard(snapshot, config, 110, 30, true, false)
+	for _, expected := range []string{
+		"\x1b[36m🏁 退休倒计时",
+		"\x1b[32m💰 存款",
+		"\x1b[33m" + fmt.Sprintf("%d 年", int(float64(snapshot.Retirement.RemainingDays)/averageDaysPerYear)),
+		"\x1b[32m" + displayMoney(snapshot.LiveBalance, false),
+		"\x1b[36m" + displayMoney(snapshot.DailyUntilRetirement, false),
+	} {
+		if !strings.Contains(output, expected) {
+			t.Fatalf("未来卡片缺少语义色 %q:\n%s", expected, output)
+		}
+	}
+
+	config.HideAmounts = true
+	hidden := renderDashboard(snapshot, config, 110, 30, true, false)
+	if strings.Contains(hidden, "\x1b[32m¥••••") || strings.Contains(hidden, "\x1b[36m¥••••") {
+		t.Fatalf("隐私占位符不应使用金额强调色:\n%s", hidden)
 	}
 }
 

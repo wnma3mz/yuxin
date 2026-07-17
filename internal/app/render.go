@@ -113,25 +113,38 @@ func renderDashboard(snapshot DashboardSnapshot, config Config, terminalWidth, t
 			retirementRows = append(retirementRows, metric("退休信息", "已隐藏", leftWidth-4))
 		} else {
 			days := max(0, snapshot.Retirement.RemainingDays)
+			yearsValue := color(fmt.Sprintf("%d 年", int(float64(days)/averageDaysPerYear)), "33", useColor)
+			monthsValue := color(fmt.Sprintf("%d 个月", int(float64(days)/averageDaysPerMonth)), "33", useColor)
+			daysValue := color(commaInt(days)+" 天", "33", useColor)
 			retirementRows = append(retirementRows,
 				retirementProgress(snapshot.Retirement.Progress, leftWidth-4, useColor),
-				metric("距离退休还有", fmt.Sprintf("%d 年", int(float64(days)/averageDaysPerYear)), leftWidth-4),
-				metric("距离退休还有", fmt.Sprintf("%d 个月", int(float64(days)/averageDaysPerMonth)), leftWidth-4),
-				metric("距离退休还有", commaInt(days)+" 天", leftWidth-4),
+				metric(color("距离退休", "90", useColor), yearsValue, leftWidth-4),
+				metric(color("├─ 按月计算", "90", useColor), monthsValue, leftWidth-4),
+				metric(color("└─ 按天计算", "90", useColor), daysValue, leftWidth-4),
 			)
 		}
 	}
 	assetRows := []string{}
 	assetTitle := "存款"
 	if snapshot.AssetsEnabled {
+		liveBalance := displayMoney(snapshot.LiveBalance, config.HideAmounts)
+		if !config.HideAmounts {
+			liveBalance = color(liveBalance, "32", useColor)
+		}
 		assetRows = append(assetRows,
-			metric("实时存款余额", displayMoney(snapshot.LiveBalance, config.HideAmounts), rightWidth-4),
+			metric("实时存款余额", liveBalance, rightWidth-4),
 		)
 		if snapshot.RetirementEnabled && snapshot.Retirement.RemainingDays > 0 {
+			dailyBudget := displayMoney(snapshot.DailyUntilRetirement, config.HideAmounts)
+			monthlyBudget := displayMoney(snapshot.DailyUntilRetirement*averageDaysPerMonth, config.HideAmounts)
+			if !config.HideAmounts {
+				dailyBudget = color(dailyBudget, "36", useColor)
+				monthlyBudget = color(monthlyBudget, "36", useColor)
+			}
 			assetRows = append(assetRows,
-				metric("撑到退休每天可花", displayMoney(snapshot.DailyUntilRetirement, config.HideAmounts), rightWidth-4),
-				metric("撑到退休每月可花", displayMoney(snapshot.DailyUntilRetirement*averageDaysPerMonth, config.HideAmounts), rightWidth-4),
-				metric("撑到退休每年可花", displayMoney(snapshot.DailyUntilRetirement*averageDaysPerYear, config.HideAmounts), rightWidth-4),
+				color("如果现在躺平：", "90", useColor),
+				metric(color("├─ 每天可花", "90", useColor), dailyBudget, rightWidth-4),
+				metric(color("└─ 每月可花", "90", useColor), monthlyBudget, rightWidth-4),
 			)
 			if !config.HideAmounts && !config.HideRetirementDate {
 				assetTitle += " · " + purchasingPowerQuip(snapshot.DailyUntilRetirement)
@@ -206,21 +219,21 @@ func renderDashboard(snapshot DashboardSnapshot, config Config, terminalWidth, t
 		}
 	} else if showPanels && sideBySide {
 		lines = append(lines, joinPanels(
-			panel("退休倒计时", retirementRows, leftWidth),
-			panel(assetTitle, assetRows, rightWidth),
+			panel(color("🏁 退休倒计时", "36", useColor), retirementRows, leftWidth),
+			panel(color("💰 "+assetTitle, "32", useColor), assetRows, rightWidth),
 		)...)
 		if len(goalRows) > 0 {
-			lines = append(lines, panel("存款目标", goalRows, width)...)
+			lines = append(lines, panel(color("🎯 存款目标", "33", useColor), goalRows, width)...)
 		}
 	} else if showPanels {
 		if snapshot.RetirementEnabled {
-			lines = append(lines, panel("退休倒计时", retirementRows, width)...)
+			lines = append(lines, panel(color("🏁 退休倒计时", "36", useColor), retirementRows, width)...)
 		}
 		if snapshot.AssetsEnabled {
-			lines = append(lines, panel(assetTitle, assetRows, width)...)
+			lines = append(lines, panel(color("💰 "+assetTitle, "32", useColor), assetRows, width)...)
 		}
 		if len(goalRows) > 0 {
-			lines = append(lines, panel("存款目标", goalRows, width)...)
+			lines = append(lines, panel(color("🎯 存款目标", "33", useColor), goalRows, width)...)
 		}
 	}
 	if details {

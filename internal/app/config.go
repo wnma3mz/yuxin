@@ -94,6 +94,7 @@ func defaultConfig() Config {
 		BalanceStartDate:   today,
 		AssetsEnabled:      false,
 		balanceDateMissing: true,
+		TargetMonthlySpend: 3000,
 	}
 }
 

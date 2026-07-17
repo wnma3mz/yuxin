@@ -36,8 +36,8 @@ func TestLoadRepositoryConfig(t *testing.T) {
 	if len(config.Workdays) != 5 || !config.Workdays[time.Monday] || !config.Workdays[time.Friday] {
 		t.Errorf("Workdays = %#v, want Monday through Friday", config.Workdays)
 	}
-	if config.AssetsEnabled || config.Assets != 0 || config.Reserve != 0 || config.TargetMonthlySpend != 0 {
-		t.Errorf("asset defaults = enabled %t, assets %.2f, reserve %.2f, target %.2f; want disabled", config.AssetsEnabled, config.Assets, config.Reserve, config.TargetMonthlySpend)
+	if config.AssetsEnabled || config.Assets != 0 || config.Reserve != 0 || config.TargetMonthlySpend != 3000 {
+		t.Errorf("asset defaults = enabled %t, assets %.2f, reserve %.2f, target %.2f; want disabled with target 3000", config.AssetsEnabled, config.Assets, config.Reserve, config.TargetMonthlySpend)
 	}
 	if got := config.BalanceStartDate.Format("2006-01-02"); got != "2026-07-17" {
 		t.Errorf("BalanceStartDate = %s, want 2026-07-17", got)

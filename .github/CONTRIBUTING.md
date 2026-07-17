@@ -6,6 +6,8 @@
 
 项目需要 Go 1.22 或更高版本，并且只使用 Go 标准库。
 
+完整的本地验证、演示素材和发布流程见[开发者文档](../docs/development.md)。
+
 ```bash
 gofmt -w .
 go test ./...

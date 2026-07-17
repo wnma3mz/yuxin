@@ -274,11 +274,28 @@ func parseInterval(value string) (time.Duration, error) {
 }
 
 func resolveConfigPath(opts cliOptions) (string, bool, error) {
+	return resolveConfigPathUsing(opts, os.Executable)
+}
+
+func resolveConfigPathUsing(opts cliOptions, executablePath func() (string, error)) (string, bool, error) {
 	if opts.configExplicit {
 		return opts.configPath, true, nil
 	}
 	if path := os.Getenv("YUXIN_CONFIG"); path != "" {
 		return path, true, nil
+	}
+	if executable, err := executablePath(); err == nil {
+		portablePath := filepath.Join(filepath.Dir(executable), "yuxin.toml")
+		info, statErr := os.Stat(portablePath)
+		if statErr == nil {
+			if !info.Mode().IsRegular() {
+				return "", false, fmt.Errorf("便携配置路径不是普通文件：%s", portablePath)
+			}
+			return portablePath, true, nil
+		}
+		if !errors.Is(statErr, os.ErrNotExist) {
+			return "", false, fmt.Errorf("检查便携配置 %s：%w", portablePath, statErr)
+		}
 	}
 	directory := os.Getenv("XDG_CONFIG_HOME")
 	if directory == "" {

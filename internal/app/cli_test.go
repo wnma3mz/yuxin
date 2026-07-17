@@ -100,6 +100,36 @@ func TestExplicitAndEnvironmentConfigPaths(t *testing.T) {
 	}
 }
 
+func TestPortableConfigNextToExecutable(t *testing.T) {
+	t.Setenv("YUXIN_CONFIG", "")
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(t.TempDir(), "xdg"))
+	directory := t.TempDir()
+	portablePath := filepath.Join(directory, "yuxin.toml")
+	if err := os.WriteFile(portablePath, []byte("version = 1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	path, explicit, err := resolveConfigPathUsing(cliOptions{}, func() (string, error) {
+		return filepath.Join(directory, "yuxin"), nil
+	})
+	if err != nil || !explicit || path != portablePath {
+		t.Fatalf("portable path = %q, %t, %v", path, explicit, err)
+	}
+}
+
+func TestPortableConfigMustBeRegularFile(t *testing.T) {
+	t.Setenv("YUXIN_CONFIG", "")
+	directory := t.TempDir()
+	if err := os.Mkdir(filepath.Join(directory, "yuxin.toml"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err := resolveConfigPathUsing(cliOptions{}, func() (string, error) {
+		return filepath.Join(directory, "yuxin"), nil
+	})
+	if err == nil || !strings.Contains(err.Error(), "不是普通文件") {
+		t.Fatalf("portable directory error = %v", err)
+	}
+}
+
 func TestParseArgsRejectsInvalidInput(t *testing.T) {
 	for _, args := range [][]string{
 		{"unknown"}, {"web"}, {"once", "doctor"}, {"--config"}, {"--config="},

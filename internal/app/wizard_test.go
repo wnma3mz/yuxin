@@ -312,7 +312,7 @@ func TestConfigWizardDoesNotSaveNoOpEdit(t *testing.T) {
 	config.BalanceStartDate = mustDate("2026-01-01")
 	path := filepath.Join(t.TempDir(), "config.toml")
 	var output bytes.Buffer
-	updated, err := configureConfig(strings.NewReader("4\n\n0\n0\n"), &output, path, config)
+	updated, err := configureConfig(strings.NewReader("4\n\n\n0\n"), &output, path, config)
 	if err != nil {
 		t.Fatal(err)
 	}

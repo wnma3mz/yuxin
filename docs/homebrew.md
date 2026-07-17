@@ -1,6 +1,8 @@
 # Homebrew 发布配置
 
-Yuxin 的正式版本仍由 `.github/workflows/build-binaries.yml` 创建。Release 成功后，同一工作流会根据 macOS ARM64 和 x86_64 ZIP 的本地 SHA-256 文件生成 `Formula/yuxin.rb`，并推送到独立 Tap。
+本文只说明 Homebrew Tap 的一次性配置和验证。常规版本发布步骤见[开发者文档](development.md)。
+
+Yuxin 的正式版本由 `.github/workflows/build-binaries.yml` 创建。Release 成功后，同一工作流会根据 macOS ARM64 和 x86_64 ZIP 的本地 SHA-256 文件生成 `Formula/yuxin.rb`，并推送到独立 Tap。
 
 ## 一次性配置
 
