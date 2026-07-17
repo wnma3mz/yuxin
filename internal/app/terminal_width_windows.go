@@ -105,23 +105,6 @@ func prepareInput(file *os.File) (func(), bool) {
 	}, true
 }
 
-func prepareHiddenInput(file *os.File) (func(), bool) {
-	var original uint32
-	ok, _, _ := getConsoleModeProc.Call(file.Fd(), uintptr(unsafe.Pointer(&original)))
-	if ok == 0 {
-		return func() {}, false
-	}
-	const enableEchoInput = 0x0004
-	changed := original &^ enableEchoInput
-	ok, _, _ = setConsoleModeProc.Call(file.Fd(), uintptr(changed))
-	if ok == 0 {
-		return func() {}, false
-	}
-	return func() {
-		setConsoleModeProc.Call(file.Fd(), uintptr(original))
-	}, true
-}
-
 func terminalSignals() []os.Signal {
 	return []os.Signal{os.Interrupt}
 }

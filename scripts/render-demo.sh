@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+ROOT=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 OUTPUT="$ROOT/docs/assets"
 WORK="$ROOT/dist/demo"
 CHROME=${CHROME:-/Applications/Google Chrome.app/Contents/MacOS/Google Chrome}

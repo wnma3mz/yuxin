@@ -70,6 +70,22 @@ func TestRenderShareCardHonorsPrivacySettings(t *testing.T) {
 	}
 }
 
+func TestRenderShareCardNormalizesLegacyRetirementPrivacy(t *testing.T) {
+	snapshot, config, err := DemoDashboard()
+	if err != nil {
+		t.Fatal(err)
+	}
+	config.HideAmounts = false
+	config.HideRetirementDate = true
+	card, err := RenderShareCard(snapshot, config, "overview")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(card, "¥") || strings.Contains(card, "2056") {
+		t.Fatalf("legacy retirement privacy leaked sensitive values:\n%s", card)
+	}
+}
+
 func TestShareCardUsesWorkStateCountdownLabel(t *testing.T) {
 	config := defaultConfig()
 	before := DashboardSnapshot{Salary: SalarySnapshot{Status: "before-work", RemainingSeconds: 3600}}

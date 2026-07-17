@@ -1,22 +1,8 @@
 package app
 
 import (
-	_ "embed"
-	"encoding/json"
-	"fmt"
 	"math"
-	"sort"
-	"sync"
 	"time"
-)
-
-//go:embed data/holidays-2026.json
-var bundledHoliday2026 []byte
-
-var (
-	holiday2026Once     sync.Once
-	holiday2026Calendar HolidayCalendar
-	holiday2026Error    error
 )
 
 const (
@@ -33,44 +19,6 @@ type SalarySnapshot struct {
 	ElapsedSeconds   int
 	RemainingSeconds int
 	Status           string
-}
-
-type RetirementSnapshot struct {
-	RetirementMonth time.Time
-	RemainingDays   int
-	DelayedMonths   int
-	StatutoryAge    string
-	IsEstimate      bool
-	Progress        float64
-}
-
-type HolidayPeriod struct {
-	Name  string
-	Start time.Time
-	End   time.Time
-}
-
-type HolidayCalendar struct {
-	Year     int
-	Periods  []HolidayPeriod
-	Workdays map[string]bool
-	Source   string
-}
-
-type HolidaySnapshot struct {
-	Name              string
-	Start             time.Time
-	End               time.Time
-	DaysUntil         int
-	PreviousName      string
-	PreviousEnd       time.Time
-	DaysSincePrevious int
-	IntervalProgress  float64
-	HasPrevious       bool
-}
-
-func (snapshot HolidaySnapshot) IsActive() bool {
-	return snapshot.DaysUntil == 0
 }
 
 type DashboardSnapshot struct {
@@ -184,51 +132,6 @@ func hourlyRateForRestDay(config Config) float64 {
 	return 0
 }
 
-func CalculateRetirement(config Config, today time.Time) (RetirementSnapshot, error) {
-	baseAge, delay, err := retirementDelay(config)
-	if err != nil {
-		return RetirementSnapshot{}, err
-	}
-	birth := normalizedDate(config.BirthDate)
-	retirement := addMonths(time.Date(birth.Year()+baseAge, birth.Month(), 1, 0, 0, 0, 0, time.UTC), delay)
-	ageMonths := baseAge*12 + delay
-	age := fmt.Sprintf("%d 岁", ageMonths/12)
-	if ageMonths%12 != 0 {
-		age += fmt.Sprintf(" %d 个月", ageMonths%12)
-	}
-	today = normalizedDate(today)
-	remaining := max(0, daysBetween(today, retirement))
-	progressStart := birth.AddDate(18, 0, 0)
-	totalDays := max(1, daysBetween(progressStart, retirement))
-	progress := math.Max(0, math.Min(1, float64(daysBetween(progressStart, today))/float64(totalDays)))
-	return RetirementSnapshot{
-		RetirementMonth: retirement,
-		RemainingDays:   remaining,
-		DelayedMonths:   delay,
-		StatutoryAge:    age,
-		Progress:        progress,
-	}, nil
-}
-
-func CalculateDefaultRetirement(config Config, today time.Time) RetirementSnapshot {
-	start := normalizedDate(config.RetirementStart)
-	retirement := time.Date(start.Year()+config.RetirementYears, start.Month(), 1, 0, 0, 0, 0, time.UTC)
-	progressStart := start
-	if !config.ProgressBirthDate.IsZero() {
-		progressStart = normalizedDate(config.ProgressBirthDate).AddDate(18, 0, 0)
-	}
-	today = normalizedDate(today)
-	totalDays := max(1, daysBetween(progressStart, retirement))
-	progress := math.Max(0, math.Min(1, float64(daysBetween(progressStart, today))/float64(totalDays)))
-	return RetirementSnapshot{
-		RetirementMonth: retirement,
-		RemainingDays:   max(0, daysBetween(today, retirement)),
-		StatutoryAge:    fmt.Sprintf("距离现在 %d 年", config.RetirementYears),
-		IsEstimate:      true,
-		Progress:        progress,
-	}
-}
-
 // DemoDashboard returns a fixed synthetic dashboard for privacy-safe screenshots.
 // It never reads or derives values from the user's configuration.
 func DemoDashboard() (DashboardSnapshot, Config, error) {
@@ -256,33 +159,21 @@ func DemoDashboard() (DashboardSnapshot, Config, error) {
 	return snapshot, config, nil
 }
 
-func retirementDelay(config Config) (baseAge, delay int, err error) {
-	var firstYear int
-	var firstMonth time.Month
-	var step, cap int
-	switch {
-	case config.Sex == "male":
-		baseAge, firstYear, firstMonth, step, cap = 60, 1965, time.January, 4, 36
-	case config.Sex == "female" && (config.FemaleTrack == "" || config.FemaleTrack == "55"):
-		baseAge, firstYear, firstMonth, step, cap = 55, 1970, time.January, 4, 36
-	case config.Sex == "female" && config.FemaleTrack == "50":
-		baseAge, firstYear, firstMonth, step, cap = 50, 1975, time.January, 2, 60
-	default:
-		return 0, 0, fmt.Errorf("性别必须是男或女")
-	}
-	birthIndex := config.BirthDate.Year()*12 + int(config.BirthDate.Month()) - 1
-	startIndex := firstYear*12 + int(firstMonth) - 1
-	if birthIndex >= startIndex {
-		delay = min((birthIndex-startIndex)/step+1, cap)
-	}
-	return baseAge, delay, nil
-}
-
 func CountWorkdays(start, end time.Time, workdays map[time.Weekday]bool) int {
 	start, end = normalizedDate(start), normalizedDate(end)
-	count := 0
-	for day := start; day.Before(end); day = day.AddDate(0, 0, 1) {
-		if workdays[day.Weekday()] {
+	days := daysBetween(start, end)
+	if days <= 0 {
+		return 0
+	}
+	workdaysPerWeek := 0
+	for _, enabled := range workdays {
+		if enabled {
+			workdaysPerWeek++
+		}
+	}
+	count := days / 7 * workdaysPerWeek
+	for offset := 0; offset < days%7; offset++ {
+		if workdays[start.AddDate(0, 0, offset).Weekday()] {
 			count++
 		}
 	}
@@ -320,118 +211,6 @@ func CountConfiguredWorkdays(start, end time.Time, config Config) int {
 		}
 	}
 	return count
-}
-
-func isWorkingDate(day time.Time, config Config, calendar *HolidayCalendar) bool {
-	day = normalizedDate(day)
-	if calendar != nil {
-		key := day.Format("2006-01-02")
-		if calendar.Workdays[key] {
-			return true
-		}
-		for _, period := range calendar.Periods {
-			if !day.Before(period.Start) && !day.After(period.End) {
-				return false
-			}
-		}
-	}
-	return config.Workdays[day.Weekday()]
-}
-
-type holidayJSON struct {
-	Year    int    `json:"year"`
-	Source  string `json:"source"`
-	Periods []struct {
-		Name  string `json:"name"`
-		Start string `json:"start"`
-		End   string `json:"end"`
-	} `json:"periods"`
-	Workdays []string `json:"workdays"`
-}
-
-func ParseHolidayCalendar(data []byte, expectedYear int) (HolidayCalendar, error) {
-	var raw holidayJSON
-	if err := json.Unmarshal(data, &raw); err != nil {
-		return HolidayCalendar{}, fmt.Errorf("解析节假日数据: %w", err)
-	}
-	if raw.Year != expectedYear {
-		return HolidayCalendar{}, fmt.Errorf("节假日年份为 %d，预期 %d", raw.Year, expectedYear)
-	}
-	calendar := HolidayCalendar{Year: raw.Year, Source: raw.Source, Workdays: make(map[string]bool)}
-	for _, item := range raw.Periods {
-		start, err := time.Parse("2006-01-02", item.Start)
-		if err != nil {
-			return HolidayCalendar{}, fmt.Errorf("节假日 %q 开始日期: %w", item.Name, err)
-		}
-		end, err := time.Parse("2006-01-02", item.End)
-		if err != nil {
-			return HolidayCalendar{}, fmt.Errorf("节假日 %q 结束日期: %w", item.Name, err)
-		}
-		if item.Name == "" || start.Year() != expectedYear || end.Before(start) {
-			return HolidayCalendar{}, fmt.Errorf("节假日 %q 日期范围无效", item.Name)
-		}
-		calendar.Periods = append(calendar.Periods, HolidayPeriod{item.Name, start, end})
-	}
-	for _, value := range raw.Workdays {
-		day, err := time.Parse("2006-01-02", value)
-		if err != nil || day.Year() != expectedYear {
-			return HolidayCalendar{}, fmt.Errorf("调休工作日 %q 无效", value)
-		}
-		calendar.Workdays[value] = true
-	}
-	sort.Slice(calendar.Periods, func(i, j int) bool { return calendar.Periods[i].Start.Before(calendar.Periods[j].Start) })
-	return calendar, nil
-}
-
-func LoadHolidayCalendar(year int) (*HolidayCalendar, error) {
-	if year != 2026 {
-		return nil, nil
-	}
-	holiday2026Once.Do(func() {
-		holiday2026Calendar, holiday2026Error = ParseHolidayCalendar(bundledHoliday2026, year)
-	})
-	if holiday2026Error != nil {
-		return nil, holiday2026Error
-	}
-	return &holiday2026Calendar, nil
-}
-
-func NextHoliday(today time.Time) (*HolidaySnapshot, error) {
-	today = normalizedDate(today)
-	periods := make([]HolidayPeriod, 0)
-	for year := today.Year() - 1; year <= today.Year()+1; year++ {
-		calendar, err := LoadHolidayCalendar(year)
-		if err != nil {
-			return nil, err
-		}
-		if calendar != nil {
-			periods = append(periods, calendar.Periods...)
-		}
-	}
-	sort.Slice(periods, func(i, j int) bool { return periods[i].Start.Before(periods[j].Start) })
-	var previous *HolidayPeriod
-	for i := range periods {
-		period := periods[i]
-		if period.End.Before(today) {
-			copy := period
-			previous = &copy
-			continue
-		}
-		daysUntil := max(0, daysBetween(today, period.Start))
-		snapshot := &HolidaySnapshot{Name: period.Name, Start: period.Start, End: period.End, DaysUntil: daysUntil}
-		if previous != nil {
-			snapshot.HasPrevious = true
-			snapshot.PreviousName = previous.Name
-			snapshot.PreviousEnd = previous.End
-			snapshot.DaysSincePrevious = daysBetween(previous.End, today)
-			intervalDays := daysBetween(previous.End, period.Start)
-			if intervalDays > 0 {
-				snapshot.IntervalProgress = math.Max(0, math.Min(1, float64(snapshot.DaysSincePrevious)/float64(intervalDays)))
-			}
-		}
-		return snapshot, nil
-	}
-	return nil, nil
 }
 
 func CalculateDashboard(now time.Time, config Config) (DashboardSnapshot, error) {
@@ -504,11 +283,6 @@ func normalizedDate(value time.Time) time.Time {
 
 func daysBetween(start, end time.Time) int {
 	return int(normalizedDate(end).Sub(normalizedDate(start)).Hours() / 24)
-}
-
-func addMonths(value time.Time, months int) time.Time {
-	index := value.Year()*12 + int(value.Month()) - 1 + months
-	return time.Date(index/12, time.Month(index%12+1), 1, 0, 0, 0, 0, time.UTC)
 }
 
 func clamp(value, low, high int) int {

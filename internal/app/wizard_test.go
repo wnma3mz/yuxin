@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bufio"
 	"bytes"
 	"os"
 	"path/filepath"
@@ -32,6 +33,23 @@ func TestConfigWizardEditsSlogan(t *testing.T) {
 	}
 	if updated.Slogan != "今日有数，下班有期。" {
 		t.Fatalf("slogan = %q", updated.Slogan)
+	}
+}
+
+func TestWizardAmountRejectsValuesAboveLimit(t *testing.T) {
+	var output bytes.Buffer
+	wizard := configWizard{
+		input:  strings.NewReader("1000000000001\n100\n"),
+		reader: bufio.NewReader(strings.NewReader("")),
+		out:    &output,
+	}
+	wizard.reader = bufio.NewReader(wizard.input)
+	amount, err := wizard.amount("金额", 0, false)
+	if err != nil || amount != 100 {
+		t.Fatalf("amount = %v, error %v", amount, err)
+	}
+	if !strings.Contains(output.String(), configNumber(maxMoneyAmount)) {
+		t.Fatalf("limit prompt missing from %q", output.String())
 	}
 }
 
@@ -178,7 +196,7 @@ func TestConfigWizardSetsRetirementFromAgeAndDefaultsToMale(t *testing.T) {
 	config.ProfileEnabled = false
 	path := filepath.Join(t.TempDir(), "config.toml")
 	var output bytes.Buffer
-	updated, err := configureConfig(strings.NewReader("3\n30\n\n0\n"), &output, path, config)
+	updated, err := configureConfig(strings.NewReader("3\n1\n30\n\n0\n"), &output, path, config)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -259,7 +277,7 @@ func TestConfigWizardEditsRetirement(t *testing.T) {
 	config := testFullConfig()
 	path := filepath.Join(t.TempDir(), "config.toml")
 	var output bytes.Buffer
-	input := "3\n1990-06\n2\n0\n"
+	input := "3\n1\n1990-06\n2\n0\n"
 	updated, err := configureConfig(strings.NewReader(input), &output, path, config)
 	if err != nil {
 		t.Fatal(err)

@@ -11,6 +11,11 @@ import (
 
 func TestCreateArchiveIncludesRunnableBinaryAndLocalData(t *testing.T) {
 	enterProjectRoot(t)
+	holidayPaths, err := filepath.Glob("internal/app/data/holidays-*.json")
+	if err != nil || len(holidayPaths) == 0 {
+		t.Fatalf("holiday data = %q, %v", holidayPaths, err)
+	}
+	latestHoliday := filepath.Base(holidayPaths[len(holidayPaths)-1])
 	executable := filepath.Join(t.TempDir(), "yuxin.bin")
 	if err := os.WriteFile(executable, []byte("binary"), 0o755); err != nil {
 		t.Fatal(err)
@@ -25,14 +30,22 @@ func TestCreateArchiveIncludesRunnableBinaryAndLocalData(t *testing.T) {
 	}
 	defer archive.Close()
 	want := map[string]bool{
-		"yuxin.exe": false, "yuxin.toml": false, "holidays-2026.json": false,
+		"yuxin.exe": false, "yuxin.toml": false, latestHoliday: false,
 		"README.md": false, "LICENSE": false,
 	}
+	holidayFiles := 0
 	for _, entry := range archive.File {
-		want[filepath.Base(entry.Name)] = true
-		if filepath.Base(entry.Name) == "yuxin.exe" && entry.Mode().Perm() != 0o755 {
+		name := filepath.Base(entry.Name)
+		want[name] = true
+		if strings.HasPrefix(name, "holidays-") && strings.HasSuffix(name, ".json") {
+			holidayFiles++
+		}
+		if name == "yuxin.exe" && entry.Mode().Perm() != 0o755 {
 			t.Fatalf("executable permissions = %o", entry.Mode().Perm())
 		}
+	}
+	if holidayFiles != 1 {
+		t.Fatalf("archive contains %d holiday data files, want 1", holidayFiles)
 	}
 	for name, found := range want {
 		if !found {

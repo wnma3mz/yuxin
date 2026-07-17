@@ -12,6 +12,7 @@ const shareCardWidth = 58
 // copying into a message or screenshot. Callers choose whether snapshot comes
 // from DemoDashboard or the user's local configuration.
 func RenderShareCard(snapshot DashboardSnapshot, config Config, card string) (string, error) {
+	config = normalizedPrivacyConfig(config)
 	var rows []string
 	switch card {
 	case "overview":

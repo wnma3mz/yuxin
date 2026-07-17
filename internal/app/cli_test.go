@@ -26,6 +26,18 @@ func TestUpdateIsAFirstClassCommand(t *testing.T) {
 	}
 }
 
+func TestDoctorStrictMatchesCommandOptionOrdering(t *testing.T) {
+	opts, err := parseArgs([]string{"doctor", "--strict"})
+	if err != nil || opts.command != "doctor" || !opts.strictDoctor {
+		t.Fatalf("parseArgs(doctor --strict) = %+v, %v", opts, err)
+	}
+	for _, args := range [][]string{{"--strict", "doctor"}, {"once", "--strict"}} {
+		if _, err := parseArgs(args); err == nil {
+			t.Errorf("parseArgs(%q) unexpectedly accepted a command-specific option", args)
+		}
+	}
+}
+
 func TestUninstallIsAFirstClassCommand(t *testing.T) {
 	opts, err := parseArgs([]string{"uninstall", "--purge", "--config", "private.toml"})
 	if err != nil || opts.command != "uninstall" || !opts.purge || opts.configPath != "private.toml" {
@@ -129,6 +141,19 @@ func TestRunOnceAndDoctorWithDefaultConfig(t *testing.T) {
 	}
 }
 
+func TestDoctorStrictReportsMissingHolidayData(t *testing.T) {
+	missingYear := time.Date(2027, time.January, 1, 12, 0, 0, 0, time.Local)
+	args := []string{"doctor", "--config", "data/default-config.toml"}
+	code, output, _ := runForTestAt(t, args, "", missingYear)
+	if code != 0 || !strings.Contains(output, "缺少 2027 年数据") {
+		t.Fatalf("ordinary doctor = code %d, output %q", code, output)
+	}
+	code, output, _ = runForTestAt(t, append(args, "--strict"), "", missingYear)
+	if code != 1 || !strings.Contains(output, "缺少 2027 年数据") {
+		t.Fatalf("strict doctor = code %d, output %q", code, output)
+	}
+}
+
 func TestRunShareDefaultsToSyntheticData(t *testing.T) {
 	code, output, stderr := runForTest(t, []string{"share", "--config", "data/default-config.toml"}, "")
 	if code != 0 || stderr != "" || !strings.Contains(output, "演示数据") || !strings.Contains(output, "无账号") {
@@ -211,7 +236,7 @@ func TestHolidayDataReminderUsesCurrentYear(t *testing.T) {
 		t.Fatalf("bundled year reminder = %q", output.String())
 	}
 	remindHolidayData(&output, time.Date(2027, time.January, 1, 0, 0, 0, 0, time.Local))
-	if !strings.Contains(output.String(), "2027 年") || !strings.Contains(output.String(), "update --force") {
+	if !strings.Contains(output.String(), "2027 年") || !strings.Contains(output.String(), "yuxin update") || strings.Contains(output.String(), "--force") {
 		t.Fatalf("missing-year reminder = %q", output.String())
 	}
 }
@@ -277,6 +302,10 @@ func TestConfigCommandCreatesAnExplicitMissingConfig(t *testing.T) {
 }
 
 func runForTest(t *testing.T, args []string, inputText string) (int, string, string) {
+	return runForTestAt(t, args, inputText, testCLITime())
+}
+
+func runForTestAt(t *testing.T, args []string, inputText string, now time.Time) (int, string, string) {
 	t.Helper()
 	directory := t.TempDir()
 	input, err := os.CreateTemp(directory, "input")
@@ -300,7 +329,7 @@ func runForTest(t *testing.T, args []string, inputText string) (int, string, str
 		t.Fatal(err)
 	}
 	defer stderr.Close()
-	code := runAt(args, input, output, stderr, testCLITime())
+	code := runAt(args, input, output, stderr, now)
 	read := func(file *os.File) string {
 		if _, err := file.Seek(0, 0); err != nil {
 			t.Fatal(err)

@@ -91,17 +91,28 @@ func createArchive(archivePath, base, platform, executable string) error {
 	if strings.HasPrefix(platform, "windows-") || strings.EqualFold(filepath.Ext(executable), ".exe") {
 		executableName += ".exe"
 	}
-	entries := []struct {
+	type archiveEntry struct {
 		path string
 		name string
 		mode os.FileMode
-	}{
+	}
+	entries := []archiveEntry{
 		{executable, executableName, 0o755},
 		{"internal/app/data/default-config.toml", "yuxin.toml", 0o644},
-		{"internal/app/data/holidays-2026.json", "holidays-2026.json", 0o644},
-		{"README.md", "README.md", 0o644},
-		{"LICENSE", "LICENSE", 0o644},
 	}
+	holidayPaths, err := filepath.Glob("internal/app/data/holidays-*.json")
+	if err != nil {
+		return err
+	}
+	if len(holidayPaths) == 0 {
+		return fmt.Errorf("未找到节假日数据")
+	}
+	latestHolidayPath := holidayPaths[len(holidayPaths)-1]
+	entries = append(entries,
+		archiveEntry{latestHolidayPath, filepath.Base(latestHolidayPath), 0o644},
+		archiveEntry{"README.md", "README.md", 0o644},
+		archiveEntry{"LICENSE", "LICENSE", 0o644},
+	)
 	for _, entry := range entries {
 		content, err := os.ReadFile(entry.path)
 		if err != nil {

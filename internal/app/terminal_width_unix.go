@@ -76,27 +76,6 @@ func prepareInput(file *os.File) (func(), bool) {
 	}, true
 }
 
-func prepareHiddenInput(file *os.File) (func(), bool) {
-	getRequest := uintptr(0x5401)
-	setRequest := uintptr(0x5402)
-	if runtime.GOOS == "darwin" {
-		getRequest = 0x40487413
-		setRequest = 0x80487414
-	}
-	original := syscall.Termios{}
-	if _, _, errno := syscall.Syscall(syscall.SYS_IOCTL, file.Fd(), getRequest, uintptr(unsafe.Pointer(&original))); errno != 0 {
-		return func() {}, false
-	}
-	changed := original
-	changed.Lflag &^= syscall.ECHO
-	if _, _, errno := syscall.Syscall(syscall.SYS_IOCTL, file.Fd(), setRequest, uintptr(unsafe.Pointer(&changed))); errno != 0 {
-		return func() {}, false
-	}
-	return func() {
-		syscall.Syscall(syscall.SYS_IOCTL, file.Fd(), setRequest, uintptr(unsafe.Pointer(&original)))
-	}, true
-}
-
 func terminalSignals() []os.Signal {
-	return []os.Signal{os.Interrupt, syscall.SIGHUP, syscall.SIGTERM, syscall.SIGQUIT, syscall.SIGTSTP}
+	return []os.Signal{os.Interrupt, syscall.SIGHUP, syscall.SIGTERM, syscall.SIGQUIT}
 }

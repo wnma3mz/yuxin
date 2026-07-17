@@ -1,6 +1,8 @@
 package app
 
 import (
+	"errors"
+	"io"
 	"math"
 	"os"
 	"path/filepath"
@@ -25,8 +27,8 @@ func TestLoadRepositoryConfig(t *testing.T) {
 	if config.RetirementYears != 0 || config.ProfileEnabled {
 		t.Errorf("retirement defaults = years %d, profile %t; want disabled", config.RetirementYears, config.ProfileEnabled)
 	}
-	if got := config.RetirementStart.Format("2006-01-02"); got != "2026-07-16" {
-		t.Errorf("RetirementStart = %s, want 2026-07-16", got)
+	if got := config.RetirementStart.Format("2006-01-02"); got != "2026-07-17" {
+		t.Errorf("RetirementStart = %s, want 2026-07-17", got)
 	}
 	if config.SalaryMode != "monthly" || config.SalaryAmount != 8000 || config.MonthlyWorkdays != 22 {
 		t.Errorf("salary config = %q %.2f %.2f", config.SalaryMode, config.SalaryAmount, config.MonthlyWorkdays)
@@ -63,6 +65,26 @@ func TestCreateDefaultConfigUsesPrivateFocusedDefaults(t *testing.T) {
 	}
 	if err := createDefaultConfig(path); err != nil {
 		t.Fatalf("creating an existing default should be harmless: %v", err)
+	}
+}
+
+func TestCreateDefaultConfigRemovesPartialFileAfterWriteFailure(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "nested", "config.toml")
+	wantErr := errors.New("injected write failure")
+	err := createDefaultConfigUsing(path, func(writer io.Writer) error {
+		if _, err := writer.Write([]byte("partial")); err != nil {
+			return err
+		}
+		return wantErr
+	})
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("createDefaultConfigUsing error = %v, want %v", err, wantErr)
+	}
+	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("partial default config still exists: %v", err)
+	}
+	if err := createDefaultConfig(path); err != nil {
+		t.Fatalf("retry after failed write: %v", err)
 	}
 }
 
@@ -203,7 +225,7 @@ func TestDisabledDefaults(t *testing.T) {
 	}
 }
 
-func TestExplicitProfileRequiresBirthDateAndSex(t *testing.T) {
+func TestExplicitProfileRequiresBirthAndSex(t *testing.T) {
 	for name, content := range map[string]string{
 		"missing sex":   "[profile]\nbirth_date = \"1980-01-01\"\n",
 		"missing birth": "[profile]\nsex = \"male\"\n",
@@ -308,8 +330,14 @@ func TestValidateConfigRejectsInvalidFields(t *testing.T) {
 		"retirement unit": func(config *Config) { config.RetirementUnit = "weeks" },
 		"salary mode":     func(config *Config) { config.SalaryMode = "weekly" },
 		"salary amount":   func(config *Config) { config.SalaryAmount = 0 },
+		"salary amount upper bound": func(config *Config) {
+			config.SalaryAmount = maxMoneyAmount + 1
+		},
 		"monthly workdays": func(config *Config) {
 			config.MonthlyWorkdays = 0
+		},
+		"monthly workdays upper bound": func(config *Config) {
+			config.MonthlyWorkdays = maxMonthlyWorkdays + 1
 		},
 		"empty workdays": func(config *Config) { config.Workdays = nil },
 		"work hours":     func(config *Config) { config.EndSecond = config.StartSecond },
@@ -331,11 +359,28 @@ func TestValidateConfigRejectsInvalidFields(t *testing.T) {
 			config.Sex = "female"
 			config.FemaleTrack = "51"
 		},
+		"male with female track": func(config *Config) {
+			config.ProfileEnabled = true
+			config.Sex = "male"
+			config.FemaleTrack = "55"
+		},
 		"negative reserve": func(config *Config) { config.Reserve = -1 },
-		"negative assets":  func(config *Config) { config.Assets = -1 },
-		"negative target":  func(config *Config) { config.TargetMonthlySpend = -1 },
+		"reserve upper bound": func(config *Config) {
+			config.Reserve = maxMoneyAmount + 1
+		},
+		"negative assets": func(config *Config) { config.Assets = -1 },
+		"assets upper bound": func(config *Config) {
+			config.Assets = maxMoneyAmount + 1
+		},
+		"negative target": func(config *Config) { config.TargetMonthlySpend = -1 },
+		"target upper bound": func(config *Config) {
+			config.TargetMonthlySpend = maxMoneyAmount + 1
+		},
 		"negative account": func(config *Config) {
 			config.AssetItems = []AssetItem{{Balance: -1}}
+		},
+		"account upper bound": func(config *Config) {
+			config.AssetItems = []AssetItem{{Balance: maxMoneyAmount + 1}}
 		},
 		"too many accounts": func(config *Config) {
 			config.AssetItems = make([]AssetItem, maxAssetItems+1)
@@ -355,6 +400,39 @@ func TestValidateConfigRejectsInvalidFields(t *testing.T) {
 				t.Fatal("validateConfig unexpectedly succeeded")
 			}
 		})
+	}
+}
+
+func TestValidateConfigAcceptsDocumentedUpperBounds(t *testing.T) {
+	config := defaultConfig()
+	config.SalaryAmount = maxMoneyAmount
+	config.MonthlyWorkdays = maxMonthlyWorkdays
+	config.Assets = maxMoneyAmount
+	config.Reserve = maxMoneyAmount
+	config.TargetMonthlySpend = maxMoneyAmount
+	config.AssetItems = []AssetItem{{Name: "上限账户", Balance: maxMoneyAmount}}
+	if err := validateConfigAt(config, time.Date(2026, time.July, 17, 0, 0, 0, 0, time.Local)); err != nil {
+		t.Fatalf("upper bounds rejected: %v", err)
+	}
+}
+
+func TestValidateConfigAtUsesInjectedDate(t *testing.T) {
+	today := time.Date(2026, time.July, 17, 23, 59, 0, 0, time.Local)
+	tomorrow := configDateOnly(today).AddDate(0, 0, 1)
+	config := defaultConfig()
+	config.ProgressBirthDate = tomorrow
+	if err := validateConfigAt(config, today); err == nil || !strings.Contains(err.Error(), "进度出生日期") {
+		t.Fatalf("future progress date error = %v", err)
+	}
+	if err := validateConfigAt(config, tomorrow); err != nil {
+		t.Fatalf("same-day progress date rejected: %v", err)
+	}
+
+	config.ProfileEnabled = true
+	config.BirthDate = tomorrow.AddDate(0, 0, 1)
+	config.Sex = "male"
+	if err := validateConfigAt(config, tomorrow); err == nil || !strings.Contains(err.Error(), "出生日期") {
+		t.Fatalf("future profile date error = %v", err)
 	}
 }
 
@@ -378,6 +456,21 @@ func TestFemaleProfileDoesNotNeedTrack(t *testing.T) {
 	loaded, err := loadConfig(path)
 	if err != nil || loaded.Sex != "female" || loaded.FemaleTrack != "" {
 		t.Fatalf("female profile round trip = %#v, %v", loaded, err)
+	}
+}
+
+func TestLoadLegacyRetirementPrivacyHidesAmountsToo(t *testing.T) {
+	path := writeTestConfig(t, `version = 1
+[privacy]
+hide_amounts = false
+hide_retirement_date = true
+`)
+	config, err := loadConfig(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !config.HideAmounts || !config.HideRetirementDate {
+		t.Fatalf("legacy privacy was not normalized: %#v", config)
 	}
 }
 

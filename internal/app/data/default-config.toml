@@ -2,9 +2,10 @@
 version = 1
 refresh_interval = 1
 slogan = "摸鱼有数，下班有期。"
-# 退休和资产默认关闭；运行 `yuxin config` 可按需开启。
+# 退休和存款默认关闭；运行 `yuxin config` 可按需开启。
+# 下列日期仅用于兼容旧配置，模块关闭时不参与展示或计算。
 retirement_years = 0
-retirement_start_date = "2026-07-16"
+retirement_start_date = "2026-07-17"
 progress_birth_date = "1995-01-01"
 retirement_mode = "full"
 retirement_unit = "days"

@@ -140,6 +140,49 @@ func TestBundledHolidayProgress(t *testing.T) {
 	}
 }
 
+func TestParseHolidayCalendarRejectsCrossYearPeriod(t *testing.T) {
+	data := []byte(`{"year":2026,"source":"test","periods":[{"name":"跨年","start":"2026-12-31","end":"2027-01-01"}],"workdays":[]}`)
+	if _, err := ParseHolidayCalendar(data, 2026); err == nil {
+		t.Fatal("cross-year holiday period was accepted")
+	}
+}
+
+func TestCountWorkdaysMatchesDailyReference(t *testing.T) {
+	workdays := map[time.Weekday]bool{
+		time.Monday: true, time.Tuesday: true, time.Wednesday: true,
+		time.Thursday: true, time.Friday: true, time.Saturday: false,
+	}
+	for _, dates := range [][2]string{
+		{"2026-07-13 00:00:00", "2026-07-13 00:00:00"},
+		{"2026-07-13 00:00:00", "2026-07-14 00:00:00"},
+		{"2026-07-16 00:00:00", "2026-07-27 00:00:00"},
+		{"2026-07-18 00:00:00", "2026-07-21 00:00:00"},
+		{"2026-07-21 00:00:00", "2026-07-18 00:00:00"},
+		{"2026-01-01 00:00:00", "2066-01-01 00:00:00"},
+	} {
+		start, end := testDate(dates[0]), testDate(dates[1])
+		want := 0
+		for day := normalizedDate(start); day.Before(normalizedDate(end)); day = day.AddDate(0, 0, 1) {
+			if workdays[day.Weekday()] {
+				want++
+			}
+		}
+		if got := CountWorkdays(start, end, workdays); got != want {
+			t.Fatalf("CountWorkdays(%s, %s) = %d, want %d", dates[0], dates[1], got, want)
+		}
+	}
+}
+
+func BenchmarkCalculateDashboard(b *testing.B) {
+	config := testFullConfig()
+	now := testDate("2026-07-16 15:00:00")
+	for i := 0; i < b.N; i++ {
+		if _, err := CalculateDashboard(now, config); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
 func TestDashboardCombinesAssetsAndRemainingWork(t *testing.T) {
 	config := testFullConfig()
 	config.SalaryAmount = 22000

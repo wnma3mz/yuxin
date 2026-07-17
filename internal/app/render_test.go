@@ -38,7 +38,7 @@ func TestRenderDashboardPlainSnapshot(t *testing.T) {
 	}
 
 	output := RenderDashboard(snapshot, config, 80, false)
-	for _, expected := range []string{"余薪 YUXIN", defaultSlogan, "今日入账", "¥286.37", "距离下班", "退休倒计时", "实时存款余额", "现在退休每天可花", "现在退休每月可花", "现在退休每年可花", "[p] 隐私", "[v] 视图", "[q] 退出"} {
+	for _, expected := range []string{"余薪 YUXIN", defaultSlogan, "今日入账", "¥286.37", "距离下班", "退休倒计时", "实时存款余额", "撑到退休每天可花", "撑到退休每月可花", "撑到退休每年可花", "[p] 隐私", "[v] 视图", "[q] 退出"} {
 		if !strings.Contains(output, expected) {
 			t.Errorf("rendered output does not contain %q", expected)
 		}
@@ -170,6 +170,64 @@ func TestFormattingHelpers(t *testing.T) {
 	}
 }
 
+func TestPurchasingPowerQuipRanges(t *testing.T) {
+	for _, test := range []struct {
+		budget float64
+		want   string
+	}{
+		{0.99, "馒头自由还差一点"},
+		{1, "加蛋勉强，馒头管够"},
+		{3, "够一瓶快乐水"},
+		{6, "沙县小吃友情试吃"},
+		{12, "勉强点个沙县外卖"},
+		{25, "工作日午餐自由"},
+		{50, "疯狂星期四，肆意疯狂"},
+		{100, "脱离温饱，略有小康"},
+		{200, "恭喜，退休生活开始体面"},
+	} {
+		if got := purchasingPowerQuip(test.budget); got != test.want {
+			t.Errorf("purchasingPowerQuip(%.2f) = %q, want %q", test.budget, got, test.want)
+		}
+	}
+}
+
+func TestPurchasingPowerQuipAppearsInDepositTitleOnly(t *testing.T) {
+	config := testFullConfig()
+	config.Assets = 10000
+	snapshot, err := CalculateDashboard(time.Date(2026, time.July, 16, 15, 0, 0, 0, time.Local), config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	output := renderDashboard(snapshot, config, 110, 30, false, false)
+	want := "存款 · " + purchasingPowerQuip(snapshot.DailyUntilRetirement)
+	if !strings.Contains(output, want) {
+		t.Fatalf("deposit title missing %q:\n%s", want, output)
+	}
+	config.HideAmounts = true
+	hidden := renderDashboard(snapshot, config, 110, 30, false, false)
+	if strings.Contains(hidden, purchasingPowerQuip(snapshot.DailyUntilRetirement)) {
+		t.Fatalf("privacy mode exposed purchasing-power title:\n%s", hidden)
+	}
+	config.HideAmounts = false
+	config.HideRetirementDate = true
+	hiddenRetirement := renderDashboard(snapshot, config, 110, 30, false, false)
+	if strings.Contains(hiddenRetirement, purchasingPowerQuip(snapshot.DailyUntilRetirement)) {
+		t.Fatalf("retirement privacy exposed purchasing-power title:\n%s", hiddenRetirement)
+	}
+	for _, sensitive := range []string{money(snapshot.TotalAssets), money(snapshot.DailyUntilRetirement), money(snapshot.Salary.EarnedToday)} {
+		if strings.Contains(hiddenRetirement, sensitive) {
+			t.Fatalf("legacy retirement privacy exposed %q:\n%s", sensitive, hiddenRetirement)
+		}
+	}
+	if !strings.Contains(hiddenRetirement, "¥••••") {
+		t.Fatalf("legacy retirement privacy did not render hidden placeholders:\n%s", hiddenRetirement)
+	}
+	compact := renderDashboard(snapshot, testFullConfig(), 80, 20, false, false)
+	if strings.Contains(compact, "存款 ·") {
+		t.Fatalf("compact layout included purchasing-power title:\n%s", compact)
+	}
+}
+
 func TestStatusAndFormattingVariants(t *testing.T) {
 	for status, expected := range map[string]string{
 		"working": "正在上班", "before-work": "尚未上班", "lunch-break": "午休中",
@@ -190,8 +248,8 @@ func TestStatusAndFormattingVariants(t *testing.T) {
 		}
 	}
 	for status, expected := range map[string]string{
-		"working": "/ 秒", "lunch-break": "午休", "after-work": "结算",
-		"before-work": "等待", "rest-day": "休息",
+		"working": "/ 秒", "lunch-break": "余额暂停跳动", "after-work": "已封盘",
+		"before-work": "尚未开张", "rest-day": "工资今天也休息",
 	} {
 		if got := incomeHintForDisplay(SalarySnapshot{Status: status, HourlyRate: 36}, false); !strings.Contains(got, expected) {
 			t.Errorf("incomeHintForDisplay(%q) = %q", status, got)
@@ -204,6 +262,33 @@ func TestStatusAndFormattingVariants(t *testing.T) {
 	}
 	if money(-1.999) != "-¥2.00" || money(999.999) != "¥1,000.00" {
 		t.Fatal("money rounding variants failed")
+	}
+}
+
+func TestFooterShowsPrivacyAndViewState(t *testing.T) {
+	config := defaultConfig()
+	snapshot := DashboardSnapshot{}
+	if got := dashboardFooter(config, snapshot, false, 100); !strings.Contains(got, "[p] 隐私") || !strings.Contains(got, "[v] 视图") {
+		t.Fatalf("default footer = %q", got)
+	}
+	config.HideAmounts = true
+	if got := dashboardFooter(config, snapshot, false, 100); !strings.Contains(got, "隐私·金额") {
+		t.Fatalf("amount privacy footer = %q", got)
+	}
+	config.HideRetirementDate = true
+	if got := dashboardFooter(config, snapshot, false, 100); !strings.Contains(got, "隐私·全部") {
+		t.Fatalf("full privacy footer = %q", got)
+	}
+	snapshot.DemoMode = true
+	if got := dashboardFooter(config, snapshot, false, 100); !strings.Contains(got, "[v] 演示") {
+		t.Fatalf("demo footer = %q", got)
+	}
+	snapshot.DemoMode = false
+	if got := dashboardFooter(config, snapshot, true, 100); !strings.Contains(got, "[v] 详情") {
+		t.Fatalf("details footer = %q", got)
+	}
+	if got := dashboardFooter(config, snapshot, true, 30); strings.Contains(got, "·全部") || strings.Contains(got, "详情") {
+		t.Fatalf("narrow footer did not fall back = %q", got)
 	}
 }
 
@@ -345,7 +430,7 @@ func TestAmountOnlyPrivacyKeepsRetirementData(t *testing.T) {
 		t.Fatal(err)
 	}
 	output := RenderDashboard(snapshot, config, 100, false)
-	if !strings.Contains(output, "¥••••") || !strings.Contains(output, "距离退休还有") || !strings.Contains(output, "退休进度（18岁起）") {
+	if !strings.Contains(output, "¥••••") || !strings.Contains(output, "距离退休还有") || !strings.Contains(output, "退休进度") {
 		t.Fatalf("amount-only privacy hid the wrong fields:\n%s", output)
 	}
 	for _, leaked := range []string{"¥227", "¥100,227"} {
@@ -368,14 +453,14 @@ func TestRetirementShowsIntegerTotalUnitsAndProgress(t *testing.T) {
 		fmt.Sprintf("%d 年", int(float64(days)/365.2425)),
 		fmt.Sprintf("%d 个月", int(float64(days)/30.436875)),
 		commaInt(days) + " 天",
-		"退休进度（18岁起）",
+		"退休进度",
 	}
 	for _, expected := range expectedValues {
 		if !strings.Contains(output, expected) {
 			t.Fatalf("retirement panel missing %q:\n%s", expected, output)
 		}
 	}
-	progressIndex := strings.Index(output, "退休进度（18岁起）")
+	progressIndex := strings.Index(output, "退休进度")
 	yearsIndex := strings.Index(output, expectedValues[0])
 	if progressIndex < 0 || yearsIndex < 0 || progressIndex > yearsIndex {
 		t.Fatalf("退休进度未显示在倒计时数据之前:\n%s", output)

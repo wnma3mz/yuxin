@@ -74,7 +74,7 @@ func (wizard configWizard) summary(config Config) {
 			retirement = "已开启（隐私隐藏）"
 		} else {
 			sex := map[string]string{"male": "男", "female": "女"}[config.Sex]
-			retirement = fmt.Sprintf("%d 岁，%s", ageOnDate(config.BirthDate, configDateOnly(time.Now())), sex)
+			retirement = fmt.Sprintf("%d 岁，%s（自动）", ageOnDate(config.BirthDate, configDateOnly(time.Now())), sex)
 		}
 	} else if config.RetirementYears > 0 {
 		retirement = fmt.Sprintf("约 %d 年（旧配置）", config.RetirementYears)
@@ -195,50 +195,62 @@ func (wizard configWizard) editMore(config Config) (Config, error) {
 }
 
 func (wizard configWizard) editRetirement(config Config) (Config, error) {
+	defaultMode := "0"
+	if config.ProfileEnabled {
+		defaultMode = "1"
+	}
+	mode, err := wizard.choice("退休倒计时：0 关闭 / 1 开启自动估算", defaultMode, "0", "1")
+	if err != nil {
+		return config, err
+	}
+	if mode == "0" {
+		today := configDateOnly(time.Now())
+		config.ProfileEnabled = false
+		config.BirthDate = time.Time{}
+		config.Sex = ""
+		config.FemaleTrack = ""
+		config.RetirementYears = 0
+		config.RetirementStart = today
+		config.ProgressBirthDate = today
+		return config, nil
+	}
+	today := configDateOnly(time.Now())
 	defaultBirth := "30"
 	if config.ProfileEnabled && !config.BirthDate.IsZero() {
 		defaultBirth = config.BirthDate.Format("2006-01-02")
 	}
 	for {
-		value, err := wizard.ask("年龄或出生年月（0 关闭，如 30 / 1995-06）", defaultBirth)
+		value, err := wizard.ask("年龄或出生年月（如 30 / 1995-06）", defaultBirth)
 		if err != nil {
 			return config, err
 		}
-		if value == "0" {
-			today := configDateOnly(time.Now())
-			config.ProfileEnabled = false
-			config.BirthDate = time.Time{}
-			config.Sex = ""
-			config.FemaleTrack = ""
-			config.RetirementYears = 0
-			config.RetirementStart = today
-			config.ProgressBirthDate = today
-			return config, nil
-		}
-		today := configDateOnly(time.Now())
 		birth, err := parseAgeOrBirth(value, today)
 		if err != nil {
 			fmt.Fprintf(wizard.out, "  %v\n", err)
 			continue
 		}
-		defaultSex := "1"
-		if config.ProfileEnabled && config.Sex == "female" {
-			defaultSex = "2"
-		}
-		choice, err := wizard.choice("性别：1 男 / 2 女", defaultSex, "1", "2")
-		if err != nil {
-			return config, err
-		}
 		config.ProfileEnabled = true
 		config.BirthDate = birth
 		config.ProgressBirthDate = today
 		config.RetirementStart = today
-		config.Sex = map[string]string{"1": "male", "2": "female"}[choice]
-		config.FemaleTrack = ""
 		config.RetirementYears = 0
 		config.RetirementMode = "full"
-		return config, nil
+		return wizard.editAutomaticRetirement(config)
 	}
+}
+
+func (wizard configWizard) editAutomaticRetirement(config Config) (Config, error) {
+	defaultSex := "1"
+	if config.Sex == "female" {
+		defaultSex = "2"
+	}
+	choice, err := wizard.choice("性别：1 男 / 2 女", defaultSex, "1", "2")
+	if err != nil {
+		return config, err
+	}
+	config.Sex = map[string]string{"1": "male", "2": "female"}[choice]
+	config.FemaleTrack = ""
+	return config, nil
 }
 
 func parseAgeOrBirth(value string, today time.Time) (time.Time, error) {
@@ -314,13 +326,13 @@ func (wizard configWizard) amount(label string, current float64, allowZero bool)
 			return current, err
 		}
 		amount, err := parseAmount(value)
-		if err == nil && (amount > 0 || allowZero && amount == 0) {
+		if err == nil && amount <= maxMoneyAmount && (amount > 0 || allowZero && amount == 0) {
 			return amount, nil
 		}
 		if allowZero {
-			fmt.Fprintln(wizard.out, "  请输入大于或等于 0 的金额，可使用 20w、20万或 200k。")
+			fmt.Fprintf(wizard.out, "  请输入 0 到 %s 的金额，可使用 20w、20万或 200k。\n", configNumber(maxMoneyAmount))
 		} else {
-			fmt.Fprintln(wizard.out, "  请输入大于 0 的金额，可使用 20w、20万或 200k。")
+			fmt.Fprintf(wizard.out, "  请输入大于 0 且不超过 %s 的金额，可使用 20w、20万或 200k。\n", configNumber(maxMoneyAmount))
 		}
 	}
 }
