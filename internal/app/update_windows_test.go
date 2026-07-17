@@ -33,7 +33,7 @@ func TestReplaceExecutableCompletesInBackgroundAndCleansUp(t *testing.T) {
 	waitForWindowsCondition(t, 8*time.Second, func() bool {
 		content, readErr := os.ReadFile(target)
 		stagedErr := statError(staged)
-		scripts, _ := filepath.Glob(filepath.Join(directory, ".yuxin-update-*.cmd"))
+		scripts, _ := filepath.Glob(filepath.Join(directory, ".yuxin-update-*.ps1"))
 		return readErr == nil && bytes.Equal(content, []byte("new")) && os.IsNotExist(stagedErr) && len(scripts) == 0
 	})
 	content, readErr := os.ReadFile(target)
@@ -57,7 +57,7 @@ func TestReplaceExecutableStartFailureLeavesInputsAndNoScript(t *testing.T) {
 	if err == nil || pending {
 		t.Fatalf("replaceExecutable = pending %t, error %v", pending, err)
 	}
-	if !strings.Contains(strings.ToLower(err.Error()), "cmd.exe") {
+	if !strings.Contains(strings.ToLower(err.Error()), "powershell.exe") {
 		t.Fatalf("start error = %v", err)
 	}
 	for path, want := range map[string]string{target: "old", staged: "new"} {
@@ -66,24 +66,22 @@ func TestReplaceExecutableStartFailureLeavesInputsAndNoScript(t *testing.T) {
 			t.Fatalf("%s content = %q, %v", path, content, readErr)
 		}
 	}
-	if scripts, _ := filepath.Glob(filepath.Join(directory, ".yuxin-update-*.cmd")); len(scripts) != 0 {
+	if scripts, _ := filepath.Glob(filepath.Join(directory, ".yuxin-update-*.ps1")); len(scripts) != 0 {
 		t.Fatalf("failed start left scripts: %q", scripts)
 	}
 }
 
 func TestWindowsUpdateScriptRetriesAreBoundedAndCleanUp(t *testing.T) {
 	for _, want := range []string{
-		"for /L %%A in (1,1,120)",
-		"if not errorlevel 1 goto updated",
-		"del /F /Q \"%~2\"",
-		"del \"%~f0\"",
+		"$attempt -lt 120",
+		"Move-Item -Force -LiteralPath $Staged -Destination $Target",
+		"Start-Sleep -Milliseconds 250",
+		"Remove-Item -Force -LiteralPath $Staged",
+		"Remove-Item -Force -LiteralPath $ScriptPath",
 	} {
 		if !strings.Contains(windowsUpdateScript, want) {
 			t.Fatalf("update script missing %q:\n%s", want, windowsUpdateScript)
 		}
-	}
-	if strings.Contains(strings.ToLower(windowsUpdateScript), "goto retry") {
-		t.Fatal("update script contains an unbounded retry loop")
 	}
 }
 

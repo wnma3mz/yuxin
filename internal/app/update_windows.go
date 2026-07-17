@@ -8,18 +8,17 @@ import (
 	"path/filepath"
 )
 
-const windowsUpdateScript = "@echo off\r\n" +
-	"for /L %%A in (1,1,120) do (\r\n" +
-	"  move /Y \"%~2\" \"%~1\" >nul 2>&1\r\n" +
-	"  if not errorlevel 1 goto updated\r\n" +
-	"  timeout /t 1 /nobreak >nul\r\n" +
-	")\r\n" +
-	"del /F /Q \"%~2\" >nul 2>&1\r\n" +
-	":updated\r\n" +
-	"del \"%~f0\"\r\n"
+const windowsUpdateScript = "param([string] $Target, [string] $Staged, [string] $ScriptPath)\r\n" +
+	"$ErrorActionPreference = \"SilentlyContinue\"\r\n" +
+	"for ($attempt = 0; $attempt -lt 120 -and (Test-Path -LiteralPath $Staged); $attempt++) {\r\n" +
+	"    Move-Item -Force -LiteralPath $Staged -Destination $Target\r\n" +
+	"    if (Test-Path -LiteralPath $Staged) { Start-Sleep -Milliseconds 250 }\r\n" +
+	"}\r\n" +
+	"if (Test-Path -LiteralPath $Staged) { Remove-Item -Force -LiteralPath $Staged }\r\n" +
+	"Remove-Item -Force -LiteralPath $ScriptPath\r\n"
 
 func replaceExecutable(staged, target string) (bool, error) {
-	script, err := os.CreateTemp(filepath.Dir(target), ".yuxin-update-*.cmd")
+	script, err := os.CreateTemp(filepath.Dir(target), ".yuxin-update-*.ps1")
 	if err != nil {
 		return false, err
 	}
@@ -33,9 +32,7 @@ func replaceExecutable(staged, target string) (bool, error) {
 		os.Remove(scriptPath)
 		return false, err
 	}
-	// Start cmd.exe directly. A nested `start` command reparses paths containing
-	// shell metacharacters such as &, even when os/exec quoted the arguments.
-	command := exec.Command("cmd.exe", "/C", scriptPath, target, staged)
+	command := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", scriptPath, target, staged, scriptPath)
 	if err := command.Start(); err != nil {
 		os.Remove(scriptPath)
 		return false, err
