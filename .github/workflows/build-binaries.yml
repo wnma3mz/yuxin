@@ -93,9 +93,100 @@ jobs:
             release/*.sha256
           if-no-files-found: error
 
+  installer-shell:
+    name: Shell installer
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Validate installer syntax
+        run: sh -n scripts/install.sh
+      - name: Exercise shell installer
+        shell: bash
+        run: |
+          release_dir="$RUNNER_TEMP/yuxin-release"
+          package_dir="$RUNNER_TEMP/yuxin-package"
+          mkdir -p "$release_dir" "$package_dir"
+          printf '#!/bin/sh\necho yuxin-installer-test\n' > "$package_dir/yuxin"
+          chmod 755 "$package_dir/yuxin"
+          for architecture in x86_64 arm64; do
+            asset="yuxin-linux-$architecture.zip"
+            install_dir="$RUNNER_TEMP/yuxin-install-$architecture"
+            (cd "$package_dir" && zip -q "$release_dir/$asset" yuxin)
+            (cd "$release_dir" && sha256sum "$asset" > "$asset.sha256")
+            YUXIN_SYSTEM=Linux YUXIN_ARCHITECTURE="$architecture" \
+              YUXIN_RELEASE_BASE="file://$release_dir" YUXIN_INSTALL_DIR="$install_dir" \
+              sh scripts/install.sh
+            test "$("$install_dir/yuxin")" = "yuxin-installer-test"
+          done
+
+  installer-powershell:
+    name: PowerShell installer
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Validate installer syntax
+        shell: pwsh
+        run: |
+          [scriptblock]::Create((Get-Content -Raw scripts/install.ps1)) | Out-Null
+      - name: Exercise PowerShell installer
+        shell: pwsh
+        run: |
+          $releaseDirectory = Join-Path $env:RUNNER_TEMP "yuxin-release"
+          $packageDirectory = Join-Path $env:RUNNER_TEMP "yuxin-package"
+          New-Item -ItemType Directory -Force -Path $releaseDirectory, $packageDirectory | Out-Null
+          Copy-Item -LiteralPath $env:ComSpec -Destination (Join-Path $packageDirectory "yuxin.exe")
+          $userPathBefore = [Environment]::GetEnvironmentVariable("Path", "User")
+          foreach ($case in @(
+              @{ Runtime = "X64"; Release = "x86_64" },
+              @{ Runtime = "Arm64"; Release = "arm64" }
+          )) {
+              $asset = "yuxin-windows-$($case.Release).zip"
+              $archive = Join-Path $releaseDirectory $asset
+              Compress-Archive -Path (Join-Path $packageDirectory "yuxin.exe") -DestinationPath $archive
+              $hash = (Get-FileHash -Algorithm SHA256 $archive).Hash.ToLowerInvariant()
+              "$hash  $asset" | Set-Content -Encoding ascii "$archive.sha256"
+
+              $installDirectory = Join-Path $env:RUNNER_TEMP "yuxin-install-$($case.Release)"
+              $env:YUXIN_ARCHITECTURE = $case.Runtime
+              $env:YUXIN_RELEASE_BASE = $releaseDirectory
+              $env:YUXIN_INSTALL_DIR = $installDirectory
+              $env:YUXIN_SKIP_PATH = "1"
+              & ./scripts/install.ps1
+              $output = & (Join-Path $installDirectory "yuxin.exe") /d /c "echo yuxin-installer-test"
+              if ($output.Trim() -ne "yuxin-installer-test") {
+                  throw "安装后的可执行文件冒烟测试失败。"
+              }
+          }
+          $userPathAfter = [Environment]::GetEnvironmentVariable("Path", "User")
+          if ($userPathAfter -ne $userPathBefore) {
+              throw "YUXIN_SKIP_PATH 未跳过用户 PATH 修改。"
+          }
+
+  homebrew-formula:
+    name: Homebrew formula
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Generate and validate formula
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: "1"
+        run: |
+          formula="$RUNNER_TEMP/Formula/yuxin.rb"
+          scripts/generate-homebrew-formula.sh \
+            1.2.3 \
+            aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
+            bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb \
+            "$formula"
+          ruby -c "$formula"
+          brew style "$formula"
+          grep -q 'version "1.2.3"' "$formula"
+          if scripts/generate-homebrew-formula.sh 1.2.3 invalid invalid "$formula"; then
+            exit 1
+          fi
+
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: build
+    needs: [build, installer-shell, installer-powershell, homebrew-formula]
     runs-on: ubuntu-latest
     permissions:
       contents: write

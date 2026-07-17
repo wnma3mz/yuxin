@@ -20,7 +20,7 @@ go build -trimpath -ldflags="-s -w -buildid=" -o yuxin ./cmd/yuxin
 ./yuxin --version
 ```
 
-CI 还会在 Linux、macOS 和 Windows 上测试构建，验证安装脚本、ARM64 交叉构建、Homebrew Formula 和工作流配置。
+日常 CI 在 Ubuntu 上执行 Go 单测、覆盖率、Vet、构建和冒烟测试，并验证 Supabase SQL 隐私契约、Web 生产构建与工作流配置。跨平台构建、ARM64、安装器和 Homebrew Formula 只在发版工作流中验证。
 
 ## 演示素材
 
@@ -76,7 +76,7 @@ git tag "v$version"
 git push origin "v$version"
 ```
 
-`.github/workflows/build-binaries.yml` 会再次测试并构建 macOS、Windows 和 Linux 的 x86_64/ARM64 发布包，校验标签与版本文件一致，随后创建 GitHub Latest Release。Release 说明取自 `CHANGELOG.md` 中的对应版本。
+`.github/workflows/build-binaries.yml` 会再次测试并构建 macOS、Windows 和 Linux 的 x86_64/ARM64 发布包，同时验证 Shell/PowerShell 安装器和 Homebrew Formula。所有发版门禁通过后才会创建 GitHub Latest Release。Release 说明取自 `CHANGELOG.md` 中的对应版本。
 
 Release 成功后，工作流会使用两个 macOS ZIP 的 SHA-256 自动更新 `wnma3mz/homebrew-tap`。首次启用或调整 Tap 权限时，按照 [Homebrew 发布配置](homebrew.md)操作。
 
