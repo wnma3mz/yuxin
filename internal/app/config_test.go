@@ -36,7 +36,7 @@ func TestLoadRepositoryConfig(t *testing.T) {
 	if len(config.Workdays) != 5 || !config.Workdays[time.Monday] || !config.Workdays[time.Friday] {
 		t.Errorf("Workdays = %#v, want Monday through Friday", config.Workdays)
 	}
-	if config.AssetsEnabled || config.Assets != 0 || config.Reserve != 0 || config.TargetMonthlySpend != 3000 {
+	if config.AssetsEnabled || config.Assets != 0 || config.Reserve != 0 || config.TargetMonthlySpend != 3000 || config.WishName != "" || config.WishAmount != 0 {
 		t.Errorf("asset defaults = enabled %t, assets %.2f, reserve %.2f, target %.2f; want disabled with target 3000", config.AssetsEnabled, config.Assets, config.Reserve, config.TargetMonthlySpend)
 	}
 	if got := config.BalanceStartDate.Format("2006-01-02"); got != "2026-07-17" {
@@ -322,6 +322,24 @@ func TestDisplayAndPrivacyConfigRoundTrip(t *testing.T) {
 	}
 }
 
+func TestWishTargetConfigRoundTrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	config := defaultConfig()
+	config.TargetMonthlySpend = 0
+	config.WishName = "心仪的相机"
+	config.WishAmount = 12000
+	if err := saveConfig(config, path); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := loadConfig(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.WishName != config.WishName || loaded.WishAmount != config.WishAmount || loaded.TargetMonthlySpend != 0 {
+		t.Fatalf("wish target round trip = %#v", loaded)
+	}
+}
+
 func TestValidateConfigRejectsInvalidFields(t *testing.T) {
 	tests := map[string]func(*Config){
 		"slogan too long":  func(config *Config) { config.Slogan = strings.Repeat("余", maxSloganRunes+1) },
@@ -380,6 +398,33 @@ func TestValidateConfigRejectsInvalidFields(t *testing.T) {
 		"target upper bound": func(config *Config) {
 			config.TargetMonthlySpend = maxMoneyAmount + 1
 		},
+		"wish amount without name": func(config *Config) {
+			config.TargetMonthlySpend = 0
+			config.WishAmount = 1000
+		},
+		"wish name without amount": func(config *Config) {
+			config.TargetMonthlySpend = 0
+			config.WishName = "相机"
+		},
+		"wish amount upper bound": func(config *Config) {
+			config.TargetMonthlySpend = 0
+			config.WishName = "相机"
+			config.WishAmount = maxMoneyAmount + 1
+		},
+		"wish name too long": func(config *Config) {
+			config.TargetMonthlySpend = 0
+			config.WishName = strings.Repeat("余", maxSloganRunes+1)
+			config.WishAmount = 1000
+		},
+		"wish name control": func(config *Config) {
+			config.TargetMonthlySpend = 0
+			config.WishName = "bad\nname"
+			config.WishAmount = 1000
+		},
+		"multiple savings targets": func(config *Config) {
+			config.WishName = "相机"
+			config.WishAmount = 1000
+		},
 		"negative account": func(config *Config) {
 			config.AssetItems = []AssetItem{{Balance: -1}}
 		},
@@ -410,6 +455,7 @@ func TestValidateConfigRejectsInvalidFields(t *testing.T) {
 func TestValidateConfigAcceptsDocumentedUpperBounds(t *testing.T) {
 	config := defaultConfig()
 	config.SalaryAmount = maxMoneyAmount
+	config.SalaryMode = "annual"
 	config.MonthlyWorkdays = maxMonthlyWorkdays
 	config.Assets = maxMoneyAmount
 	config.Reserve = maxMoneyAmount

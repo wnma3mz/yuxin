@@ -32,8 +32,8 @@ func validateConfigAt(config Config, now time.Time) error {
 	if config.ProgressBirthDate.After(today) {
 		return fmt.Errorf("进度出生日期不能晚于今天")
 	}
-	if config.SalaryMode != "monthly" && config.SalaryMode != "daily" && config.SalaryMode != "hourly" {
-		return fmt.Errorf("薪资模式必须是 monthly、daily 或 hourly")
+	if config.SalaryMode != "monthly" && config.SalaryMode != "daily" && config.SalaryMode != "hourly" && config.SalaryMode != "annual" {
+		return fmt.Errorf("薪资模式必须是 monthly、daily、hourly 或 annual")
 	}
 	if config.SalaryAmount <= 0 || config.SalaryAmount > maxMoneyAmount {
 		return fmt.Errorf("薪资金额必须大于 0 且不超过 %s", configNumber(maxMoneyAmount))
@@ -72,6 +72,18 @@ func validateConfigAt(config Config, now time.Time) error {
 	}
 	if config.TargetMonthlySpend < 0 || config.TargetMonthlySpend > maxMoneyAmount {
 		return fmt.Errorf("目标每月可花必须在 0 到 %s 之间", configNumber(maxMoneyAmount))
+	}
+	if config.WishAmount < 0 || config.WishAmount > maxMoneyAmount {
+		return fmt.Errorf("心愿金额必须在 0 到 %s 之间", configNumber(maxMoneyAmount))
+	}
+	if config.WishName != "" && (strings.TrimSpace(config.WishName) == "" || utf8.RuneCountInString(config.WishName) > maxSloganRunes || strings.IndexFunc(config.WishName, unicode.IsControl) >= 0) {
+		return fmt.Errorf("心愿名称不能超过 %d 个字且不能包含控制字符", maxSloganRunes)
+	}
+	if (config.WishName == "") != (config.WishAmount == 0) {
+		return fmt.Errorf("心愿名称和金额必须同时设置或同时关闭")
+	}
+	if config.TargetMonthlySpend > 0 && config.WishAmount > 0 {
+		return fmt.Errorf("躺平目标和心愿目标只能开启一个")
 	}
 	if config.Assets < 0 || config.Assets > maxMoneyAmount {
 		return fmt.Errorf("资产余额必须在 0 到 %s 之间", configNumber(maxMoneyAmount))

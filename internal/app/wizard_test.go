@@ -3,6 +3,7 @@ package app
 import (
 	"bufio"
 	"bytes"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -92,6 +93,55 @@ func TestConfigWizardChangesOnlySelectedSection(t *testing.T) {
 	}
 }
 
+func TestSalaryModeChangeUsesRoundedEquivalentDefault(t *testing.T) {
+	tests := []struct {
+		name       string
+		mode       string
+		amount     float64
+		choice     string
+		wantMode   string
+		wantAmount float64
+	}{
+		{name: "monthly to daily", mode: "monthly", amount: 8000, choice: "2", wantMode: "daily", wantAmount: 364},
+		{name: "monthly to hourly", mode: "monthly", amount: 8000, choice: "3", wantMode: "hourly", wantAmount: 45},
+		{name: "monthly to annual", mode: "monthly", amount: 8000, choice: "4", wantMode: "annual", wantAmount: 96000},
+		{name: "daily to monthly", mode: "daily", amount: 500, choice: "1", wantMode: "monthly", wantAmount: 11000},
+		{name: "hourly to monthly", mode: "hourly", amount: 50, choice: "1", wantMode: "monthly", wantAmount: 8800},
+		{name: "annual to monthly", mode: "annual", amount: 120000, choice: "1", wantMode: "monthly", wantAmount: 10000},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			config := defaultConfig()
+			config.SalaryMode = test.mode
+			config.SalaryAmount = test.amount
+			config.MonthlyWorkdays = 22
+			wizard := configWizard{input: strings.NewReader(test.choice + "\n\n\n"), out: io.Discard}
+			wizard.reader = bufio.NewReader(wizard.input)
+			updated, err := wizard.editSalary(config)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if updated.SalaryMode != test.wantMode || updated.SalaryAmount != test.wantAmount {
+				t.Fatalf("salary = %s %.0f, want %s %.0f", updated.SalaryMode, updated.SalaryAmount, test.wantMode, test.wantAmount)
+			}
+		})
+	}
+}
+
+func TestEquivalentSalaryDefaultStaysWithinValidAmountRange(t *testing.T) {
+	config := defaultConfig()
+	config.SalaryMode = "annual"
+	config.SalaryAmount = 1
+	if got := equivalentSalaryAmount(config, "daily"); got != 1 {
+		t.Fatalf("minimum converted salary = %.0f, want 1", got)
+	}
+	config.SalaryMode = "monthly"
+	config.SalaryAmount = maxMoneyAmount
+	if got := equivalentSalaryAmount(config, "annual"); got != maxMoneyAmount {
+		t.Fatalf("maximum converted salary = %.0f, want %.0f", got, float64(maxMoneyAmount))
+	}
+}
+
 func TestConfigWizardAcceptsCompactAssetAmount(t *testing.T) {
 	config := testFullConfig()
 	path := filepath.Join(t.TempDir(), "config.toml")
@@ -170,7 +220,7 @@ func TestZeroDepositClosesAssets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if updated.AssetsEnabled || updated.Assets != 0 || len(updated.AssetItems) != 0 || updated.Reserve != 0 || updated.TargetMonthlySpend != 0 {
+	if updated.AssetsEnabled || updated.Assets != 0 || len(updated.AssetItems) != 0 || updated.Reserve != 0 || updated.TargetMonthlySpend != 0 || updated.WishName != "" || updated.WishAmount != 0 {
 		t.Fatalf("zero deposit did not close assets: %#v", updated)
 	}
 }
@@ -179,7 +229,7 @@ func TestConfigWizardSetsMonthlySavingsTarget(t *testing.T) {
 	config := testFullConfig()
 	path := filepath.Join(t.TempDir(), "config.toml")
 	var output bytes.Buffer
-	updated, err := configureConfig(strings.NewReader("4\n10w\n3000\n0\n"), &output, path, config)
+	updated, err := configureConfig(strings.NewReader("4\n10w\n1\n3000\n0\n"), &output, path, config)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -188,6 +238,22 @@ func TestConfigWizardSetsMonthlySavingsTarget(t *testing.T) {
 	}
 	if !strings.Contains(output.String(), "目标每月可花") {
 		t.Fatalf("target prompt missing: %q", output.String())
+	}
+}
+
+func TestConfigWizardSetsWishTarget(t *testing.T) {
+	config := testFullConfig()
+	path := filepath.Join(t.TempDir(), "config.toml")
+	var output bytes.Buffer
+	updated, err := configureConfig(strings.NewReader("4\n10w\n2\n心仪的相机\n12000\n0\n"), &output, path, config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Assets != 100000 || updated.TargetMonthlySpend != 0 || updated.WishName != "心仪的相机" || updated.WishAmount != 12000 {
+		t.Fatalf("wish target = %#v", updated)
+	}
+	if !strings.Contains(output.String(), "心愿物品") || !strings.Contains(output.String(), "目标金额") {
+		t.Fatalf("wish prompts missing: %q", output.String())
 	}
 }
 
@@ -291,12 +357,15 @@ func TestWizardSummaryHonorsPrivacySettings(t *testing.T) {
 	config := testFullConfig()
 	config.SalaryAmount = 12345
 	config.Assets = 98765
+	config.TargetMonthlySpend = 0
+	config.WishName = "私人心愿"
+	config.WishAmount = 12000
 	config.BirthDate = mustDate("1992-02-03")
 	config.HideAmounts = true
 	config.HideRetirementDate = true
 	var output bytes.Buffer
 	configWizard{out: &output}.summary(config)
-	for _, secret := range []string{"12,345", "98,765", "1992-02-03"} {
+	for _, secret := range []string{"12,345", "98,765", "1992-02-03", "私人心愿"} {
 		if strings.Contains(output.String(), secret) {
 			t.Fatalf("summary leaked %q: %s", secret, output.String())
 		}
@@ -312,7 +381,7 @@ func TestConfigWizardDoesNotSaveNoOpEdit(t *testing.T) {
 	config.BalanceStartDate = mustDate("2026-01-01")
 	path := filepath.Join(t.TempDir(), "config.toml")
 	var output bytes.Buffer
-	updated, err := configureConfig(strings.NewReader("4\n\n\n0\n"), &output, path, config)
+	updated, err := configureConfig(strings.NewReader("4\n\n\n\n0\n"), &output, path, config)
 	if err != nil {
 		t.Fatal(err)
 	}

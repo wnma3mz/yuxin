@@ -35,6 +35,9 @@ type DashboardSnapshot struct {
 	SavingsTarget        float64
 	SavingsGap           float64
 	SavingsProgress      float64
+	WishTarget           float64
+	WishGap              float64
+	WishProgress         float64
 	RemainingWorkdays    int
 	RemainingSalary      float64
 	TodayCoversDays      float64
@@ -120,6 +123,8 @@ func dailyRate(config Config, workSeconds int) float64 {
 		return config.SalaryAmount
 	case "hourly":
 		return config.SalaryAmount * float64(workSeconds) / 3600
+	case "annual":
+		return config.SalaryAmount / 12 / config.MonthlyWorkdays
 	default:
 		return 0
 	}
@@ -253,6 +258,9 @@ func CalculateDashboard(now time.Time, config Config) (DashboardSnapshot, error)
 	savingsTarget := 0.0
 	savingsGap := 0.0
 	savingsProgress := 0.0
+	wishTarget := 0.0
+	wishGap := 0.0
+	wishProgress := 0.0
 	covers := 0.0
 	retirementEnabled := !retirement.RetirementMonth.IsZero()
 	if retirementEnabled {
@@ -272,12 +280,18 @@ func CalculateDashboard(now time.Time, config Config) (DashboardSnapshot, error)
 			}
 		}
 	}
+	if config.AssetsEnabled && config.WishAmount > 0 {
+		wishTarget = config.WishAmount
+		wishGap = math.Max(0, wishTarget-spendable)
+		wishProgress = math.Max(0, math.Min(1, spendable/wishTarget))
+	}
 	return DashboardSnapshot{
 		Now: now, Salary: salary, Retirement: retirement,
 		RetirementEnabled: retirementEnabled, AssetsEnabled: config.AssetsEnabled,
 		TotalAssets: totalAssets, LiveBalance: liveBalance, SpendableAssets: spendable,
 		DailyUntilRetirement: dailyBudget, RemainingWorkdays: remainingWorkdays,
 		SavingsTarget: savingsTarget, SavingsGap: savingsGap, SavingsProgress: savingsProgress,
+		WishTarget: wishTarget, WishGap: wishGap, WishProgress: wishProgress,
 		RemainingSalary: remainingSalary, TodayCoversDays: covers,
 		Holiday: holiday, HolidayDataAvailable: calendar != nil,
 	}, nil

@@ -46,6 +46,7 @@ func TestBaseAnonymousContributionAnnualizesNonMonthlySalary(t *testing.T) {
 		{name: "monthly", mode: "monthly", amount: 8000, want: 8000},
 		{name: "daily", mode: "daily", amount: 500, want: 10800},
 		{name: "hourly", mode: "hourly", amount: 50, want: 8700},
+		{name: "annual", mode: "annual", amount: 120000, want: 10000},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			config := defaultConfig()

@@ -4,10 +4,13 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"math"
 	"reflect"
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 )
 
 type configWizard struct {
@@ -67,7 +70,7 @@ func configureConfig(input io.Reader, output io.Writer, path string, current Con
 }
 
 func (wizard configWizard) summary(config Config) {
-	mode := map[string]string{"monthly": "月薪", "daily": "日薪", "hourly": "时薪"}[config.SalaryMode]
+	mode := map[string]string{"monthly": "月薪", "daily": "日薪", "hourly": "时薪", "annual": "年薪"}[config.SalaryMode]
 	retirement := "关闭"
 	if config.ProfileEnabled {
 		if config.HideRetirementDate {
@@ -86,8 +89,15 @@ func (wizard configWizard) summary(config Config) {
 	assets := "关闭"
 	if config.AssetsEnabled {
 		assets = displayMoney(config.Assets, config.HideAmounts)
-		if config.TargetMonthlySpend > 0 {
-			assets += " · 目标 " + displayMoney(config.TargetMonthlySpend, config.HideAmounts) + "/月"
+		switch {
+		case config.WishAmount > 0:
+			if config.HideAmounts {
+				assets += " · 心愿 已隐藏"
+			} else {
+				assets += " · 心愿 " + config.WishName
+			}
+		case config.TargetMonthlySpend > 0:
+			assets += " · 躺平目标 " + displayMoney(config.TargetMonthlySpend, config.HideAmounts) + "/月"
 		}
 	}
 	fmt.Fprintf(wizard.out, "  4 存款       %s\n", assets)
@@ -95,14 +105,19 @@ func (wizard configWizard) summary(config Config) {
 }
 
 func (wizard configWizard) editSalary(config Config) (Config, error) {
-	defaultMode := map[string]string{"monthly": "1", "daily": "2", "hourly": "3"}[config.SalaryMode]
-	choice, err := wizard.choice("薪资模式：1 月薪 / 2 日薪 / 3 时薪", defaultMode, "1", "2", "3")
+	defaultMode := map[string]string{"monthly": "1", "daily": "2", "hourly": "3", "annual": "4"}[config.SalaryMode]
+	choice, err := wizard.choice("薪资模式：1 月薪 / 2 日薪 / 3 时薪 / 4 年薪", defaultMode, "1", "2", "3", "4")
 	if err != nil {
 		return config, err
 	}
-	config.SalaryMode = map[string]string{"1": "monthly", "2": "daily", "3": "hourly"}[choice]
-	label := map[string]string{"monthly": "月薪", "daily": "日薪", "hourly": "时薪"}[config.SalaryMode]
-	config.SalaryAmount, err = wizard.amount(label, config.SalaryAmount, false)
+	targetMode := map[string]string{"1": "monthly", "2": "daily", "3": "hourly", "4": "annual"}[choice]
+	defaultAmount := config.SalaryAmount
+	if targetMode != config.SalaryMode {
+		defaultAmount = equivalentSalaryAmount(config, targetMode)
+	}
+	config.SalaryMode = targetMode
+	label := map[string]string{"monthly": "月薪", "daily": "日薪", "hourly": "时薪", "annual": "年薪"}[config.SalaryMode]
+	config.SalaryAmount, err = wizard.amount(label, defaultAmount, false)
 	if err != nil {
 		return config, err
 	}
@@ -110,6 +125,25 @@ func (wizard configWizard) editSalary(config Config) (Config, error) {
 		config.MonthlyWorkdays, err = wizard.amount("每月工作天数", config.MonthlyWorkdays, false)
 	}
 	return config, err
+}
+
+func equivalentSalaryAmount(config Config, targetMode string) float64 {
+	daily := dailyRate(config, effectiveWorkSeconds(config))
+	workHours := float64(effectiveWorkSeconds(config)) / 3600
+	var amount float64
+	switch targetMode {
+	case "monthly":
+		amount = daily * config.MonthlyWorkdays
+	case "daily":
+		amount = daily
+	case "hourly":
+		if workHours > 0 {
+			amount = daily / workHours
+		}
+	case "annual":
+		amount = daily * config.MonthlyWorkdays * 12
+	}
+	return math.Min(maxMoneyAmount, math.Max(1, math.Round(amount)))
 }
 
 func (wizard configWizard) editSchedule(config Config) (Config, error) {
@@ -312,11 +346,54 @@ func (wizard configWizard) editAssets(config Config) (Config, error) {
 	if amount == 0 {
 		config.AssetItems = nil
 		config.TargetMonthlySpend = 0
+		config.WishName = ""
+		config.WishAmount = 0
 	} else {
 		config.AssetItems = []AssetItem{{Name: "存款", Kind: "deposit", Balance: amount}}
-		config.TargetMonthlySpend, err = wizard.amount("目标每月可花（0 关闭）", config.TargetMonthlySpend, true)
+		defaultTarget := "0"
+		if config.TargetMonthlySpend > 0 {
+			defaultTarget = "1"
+		} else if config.WishAmount > 0 {
+			defaultTarget = "2"
+		}
+		target, err := wizard.choice("存款目标：0 关闭 / 1 躺平月支出 / 2 心愿物品", defaultTarget, "0", "1", "2")
 		if err != nil {
 			return config, err
+		}
+		switch target {
+		case "0":
+			config.TargetMonthlySpend = 0
+			config.WishName = ""
+			config.WishAmount = 0
+		case "1":
+			config.WishName = ""
+			config.WishAmount = 0
+			defaultSpend := config.TargetMonthlySpend
+			if defaultSpend <= 0 {
+				defaultSpend = 3000
+			}
+			config.TargetMonthlySpend, err = wizard.amount("目标每月可花", defaultSpend, false)
+			if err != nil {
+				return config, err
+			}
+		case "2":
+			config.TargetMonthlySpend = 0
+			for {
+				name, err := wizard.ask("心愿物品", config.WishName)
+				if err != nil {
+					return config, err
+				}
+				name = strings.TrimSpace(name)
+				if name != "" && utf8.RuneCountInString(name) <= maxSloganRunes && strings.IndexFunc(name, unicode.IsControl) < 0 {
+					config.WishName = name
+					break
+				}
+				fmt.Fprintf(wizard.out, "  心愿物品必须是 1 到 %d 个字且不能包含控制字符。\n", maxSloganRunes)
+			}
+			config.WishAmount, err = wizard.amount("目标金额", config.WishAmount, false)
+			if err != nil {
+				return config, err
+			}
 		}
 	}
 	return config, nil
@@ -324,7 +401,11 @@ func (wizard configWizard) editAssets(config Config) (Config, error) {
 
 func (wizard configWizard) amount(label string, current float64, allowZero bool) (float64, error) {
 	for {
-		value, err := wizard.ask(label, configNumber(current))
+		defaultValue := configNumber(current)
+		if !allowZero && current <= 0 {
+			defaultValue = ""
+		}
+		value, err := wizard.ask(label, defaultValue)
 		if err != nil {
 			return current, err
 		}

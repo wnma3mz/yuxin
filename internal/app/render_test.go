@@ -543,7 +543,7 @@ func TestSavingsTargetShowsProgressAndGap(t *testing.T) {
 		t.Fatal(err)
 	}
 	output := RenderDashboard(snapshot, config, 110, false)
-	for _, expected := range []string{"存款目标", "每天", "每月", "¥3,000.00", "每年", "¥36,000.00", "目标进度", "距离目标还差"} {
+	for _, expected := range []string{"躺平目标", "每天", "每月", "¥3,000.00", "每年", "¥36,000.00", "目标进度", "距离目标还差"} {
 		if !strings.Contains(output, expected) {
 			t.Fatalf("savings target missing %q:\n%s", expected, output)
 		}
@@ -551,8 +551,39 @@ func TestSavingsTargetShowsProgressAndGap(t *testing.T) {
 
 	config.HideAmounts = true
 	hidden := RenderDashboard(snapshot, config, 110, false)
-	if strings.Contains(hidden, "¥3,000.00") || !strings.Contains(hidden, "存款目标") || !strings.Contains(hidden, "已隐藏") {
+	if strings.Contains(hidden, "¥3,000.00") || !strings.Contains(hidden, "躺平目标") || !strings.Contains(hidden, "已隐藏") {
 		t.Fatalf("savings target privacy failed:\n%s", hidden)
+	}
+}
+
+func TestWishTargetShowsProgressAndRespectsPrivacy(t *testing.T) {
+	config := testFullConfig()
+	config.TargetMonthlySpend = 0
+	config.WishName = "心仪的相机"
+	config.WishAmount = 120000
+	snapshot, err := CalculateDashboard(time.Date(2026, time.July, 16, 15, 0, 0, 0, time.Local), config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	output := RenderDashboard(snapshot, config, 110, false)
+	for _, expected := range []string{"心愿目标", "心仪的相机", "目标金额", "目标进度", "距离拿下还差"} {
+		if !strings.Contains(output, expected) {
+			t.Fatalf("wish target missing %q:\n%s", expected, output)
+		}
+	}
+
+	config.HideAmounts = true
+	hidden := RenderDashboard(snapshot, config, 110, false)
+	if strings.Contains(hidden, config.WishName) || strings.Contains(hidden, "¥120,000.00") || !strings.Contains(hidden, "心愿目标") || !strings.Contains(hidden, "已隐藏") {
+		t.Fatalf("wish target privacy failed:\n%s", hidden)
+	}
+	compact := renderDashboard(snapshot, config, 68, 20, false, false)
+	if strings.Contains(compact, config.WishName) || !strings.Contains(compact, "心愿目标 已隐藏") {
+		t.Fatalf("compact wish privacy failed:\n%s", compact)
+	}
+	tiny := renderTiny(snapshot, config, 40)
+	if strings.Contains(tiny, config.WishName) || !strings.Contains(tiny, "心愿目标 已隐藏") {
+		t.Fatalf("tiny wish privacy failed:\n%s", tiny)
 	}
 }
 

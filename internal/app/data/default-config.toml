@@ -11,12 +11,14 @@ retirement_mode = "full"
 retirement_unit = "days"
 reserve = "0"
 target_monthly_spend = "3000"
+wish_name = ""
+wish_amount = "0"
 balance_start_date = "2026-07-17"
 assets_enabled = false
 profile_enabled = false
 
 [salary]
-# monthly（月薪）/ daily（日薪）/ hourly（时薪）
+# monthly（月薪）/ daily（日薪）/ hourly（时薪）/ annual（年薪）
 mode = "monthly"
 amount = "8000"
 monthly_workdays = "22"

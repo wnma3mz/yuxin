@@ -235,6 +235,8 @@ func baseAnonymousContribution(config Config) anonymousContribution {
 		monthly = config.SalaryAmount * float64(workdays) * 52 / 12
 	case "hourly":
 		monthly = config.SalaryAmount * float64(workMinutes) / 60 * float64(workdays) * 52 / 12
+	case "annual":
+		monthly = config.SalaryAmount / 12
 	}
 	return anonymousContribution{
 		MonthlySalaryCNY: roundInt64(monthly, 100),

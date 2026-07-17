@@ -152,6 +152,7 @@ func renderDashboard(snapshot DashboardSnapshot, config Config, terminalWidth, t
 		}
 	}
 	goalRows := []string{}
+	goalTitle := "🎯 躺平目标"
 	if snapshot.SavingsTarget > 0 {
 		goalRows = append(goalRows, threeColumns(
 			"每天 "+displayMoney(config.TargetMonthlySpend/averageDaysPerMonth, config.HideAmounts),
@@ -172,6 +173,26 @@ func renderDashboard(snapshot DashboardSnapshot, config Config, terminalWidth, t
 			goalRows = append(goalRows,
 				savingsTargetProgress(snapshot.SavingsProgress, width-4, useColor),
 				metric("距离目标还差", gap, width-4),
+			)
+		}
+	} else if snapshot.WishTarget > 0 {
+		goalTitle = "🎁 心愿目标"
+		if config.HideAmounts {
+			goalRows = append(goalRows,
+				metric("心愿物品", "已隐藏", width-4),
+				metric("目标进度", "已隐藏", width-4),
+				metric("距离拿下还差", displayMoney(snapshot.WishGap, true), width-4),
+			)
+		} else {
+			gap := displayMoney(snapshot.WishGap, false)
+			if snapshot.WishGap <= 0 {
+				gap = "已达成"
+			}
+			goalRows = append(goalRows,
+				metric("心愿物品", config.WishName, width-4),
+				metric("目标金额", displayMoney(snapshot.WishTarget, false), width-4),
+				savingsTargetProgress(snapshot.WishProgress, width-4, useColor),
+				metric("距离拿下还差", gap, width-4),
 			)
 		}
 	}
@@ -207,9 +228,15 @@ func renderDashboard(snapshot DashboardSnapshot, config Config, terminalWidth, t
 			}
 			compactRows = append(compactRows, text)
 			if snapshot.SavingsTarget > 0 {
-				target := "存款目标 已隐藏"
+				target := "躺平目标 已隐藏"
 				if !config.HideAmounts {
-					target = fmt.Sprintf("存款目标 %.0f%% · 还差 %s", snapshot.SavingsProgress*100, displayMoney(snapshot.SavingsGap, false))
+					target = fmt.Sprintf("躺平目标 %.0f%% · 还差 %s", snapshot.SavingsProgress*100, displayMoney(snapshot.SavingsGap, false))
+				}
+				compactRows = append(compactRows, target)
+			} else if snapshot.WishTarget > 0 {
+				target := "心愿目标 已隐藏"
+				if !config.HideAmounts {
+					target = fmt.Sprintf("心愿目标 %s %.0f%% · 还差 %s", config.WishName, snapshot.WishProgress*100, displayMoney(snapshot.WishGap, false))
 				}
 				compactRows = append(compactRows, target)
 			}
@@ -223,7 +250,7 @@ func renderDashboard(snapshot DashboardSnapshot, config Config, terminalWidth, t
 			panel(color("💰 "+assetTitle, "32", useColor), assetRows, rightWidth),
 		)...)
 		if len(goalRows) > 0 {
-			lines = append(lines, panel(color("🎯 存款目标", "33", useColor), goalRows, width)...)
+			lines = append(lines, panel(color(goalTitle, "33", useColor), goalRows, width)...)
 		}
 	} else if showPanels {
 		if snapshot.RetirementEnabled {
@@ -233,18 +260,23 @@ func renderDashboard(snapshot DashboardSnapshot, config Config, terminalWidth, t
 			lines = append(lines, panel(color("💰 "+assetTitle, "32", useColor), assetRows, width)...)
 		}
 		if len(goalRows) > 0 {
-			lines = append(lines, panel(color("🎯 存款目标", "33", useColor), goalRows, width)...)
+			lines = append(lines, panel(color(goalTitle, "33", useColor), goalRows, width)...)
 		}
 	}
 	if details {
-		lines = append(lines, panel("计算口径", []string{
+		detailRows := []string{
 			fmt.Sprintf("时薪 %s · 日薪 %s", displayMoney(snapshot.Salary.HourlyRate, config.HideAmounts), displayMoney(snapshot.Salary.DailyRate, config.HideAmounts)),
 			"退休天数口径：距离预计退休月第一天。",
 			"退休年、月为剩余天数按 365.2425 天和 30.436875 天向下取整。",
 			"退休进度统一按 18 岁起计，不需要收集参加工作时间。",
-			"存款目标：目标月支出 × 距退休天数 ÷ 30.436875，不含收益率和通胀。",
-			"今日入账按秒更新；未来口径不含个税、奖金、利息、通胀和养老金。",
-		}, width)...)
+		}
+		if snapshot.SavingsTarget > 0 {
+			detailRows = append(detailRows, "躺平目标：目标月支出 × 距退休天数 ÷ 30.436875，不含收益率和通胀。")
+		} else if snapshot.WishTarget > 0 {
+			detailRows = append(detailRows, "心愿目标：实时可用存款 ÷ 目标金额。")
+		}
+		detailRows = append(detailRows, "今日入账按秒更新；未来口径不含个税、奖金、利息、通胀和养老金。")
+		lines = append(lines, panel("计算口径", detailRows, width)...)
 	}
 	footer := dashboardFooter(config, snapshot, details, width)
 	lines = append(lines, pad(truncate(footer, width), width, alignCenter))
@@ -301,9 +333,15 @@ func renderTiny(snapshot DashboardSnapshot, config Config, width int) string {
 	}
 	if snapshot.SavingsTarget > 0 {
 		if config.HideAmounts {
-			lines = append(lines, "存款目标 已隐藏")
+			lines = append(lines, "躺平目标 已隐藏")
 		} else {
-			lines = append(lines, fmt.Sprintf("存款目标 %.0f%% 还差%s", snapshot.SavingsProgress*100, displayMoney(snapshot.SavingsGap, false)))
+			lines = append(lines, fmt.Sprintf("躺平目标 %.0f%% 还差%s", snapshot.SavingsProgress*100, displayMoney(snapshot.SavingsGap, false)))
+		}
+	} else if snapshot.WishTarget > 0 {
+		if config.HideAmounts {
+			lines = append(lines, "心愿目标 已隐藏")
+		} else {
+			lines = append(lines, fmt.Sprintf("心愿目标 %s %.0f%% 还差%s", config.WishName, snapshot.WishProgress*100, displayMoney(snapshot.WishGap, false)))
 		}
 	}
 	if snapshot.Holiday != nil {

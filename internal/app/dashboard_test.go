@@ -45,6 +45,10 @@ func TestSalaryModesAndHolidayState(t *testing.T) {
 	if got := dailyRate(config, 8*3600); got != config.SalaryAmount*8 {
 		t.Fatalf("hourly daily rate = %v", got)
 	}
+	config.SalaryMode = "annual"
+	if got := dailyRate(config, 8*3600); got != config.SalaryAmount/12/config.MonthlyWorkdays {
+		t.Fatalf("annual daily rate = %v", got)
+	}
 	config.SalaryMode = "invalid"
 	if got := dailyRate(config, 8*3600); got != 0 {
 		t.Fatalf("invalid daily rate = %v", got)
@@ -251,6 +255,28 @@ func TestDashboardCalculatesSavingsTargetToRetirement(t *testing.T) {
 	result, err = CalculateDashboard(testDate("2026-07-16 00:00:00"), config)
 	if err != nil || result.SavingsGap != 0 || result.SavingsProgress != 1 {
 		t.Fatalf("completed target = %+v, %v", result, err)
+	}
+}
+
+func TestDashboardCalculatesWishTargetFromLiveBalance(t *testing.T) {
+	config := testFullConfig()
+	config.TargetMonthlySpend = 0
+	config.WishName = "心仪的相机"
+	config.WishAmount = 120000
+	config.Assets = 100000
+	config.AssetItems = []AssetItem{{Name: "存款", Kind: "deposit", Balance: 100000}}
+	result, err := CalculateDashboard(testDate("2026-07-16 00:00:00"), config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.WishTarget != 120000 || result.WishGap != 20000 || math.Abs(result.WishProgress-5.0/6.0) > 1e-9 {
+		t.Fatalf("wish target = target %.2f, gap %.2f, progress %.4f", result.WishTarget, result.WishGap, result.WishProgress)
+	}
+
+	config.Assets = 120001
+	result, err = CalculateDashboard(testDate("2026-07-16 00:00:00"), config)
+	if err != nil || result.WishGap != 0 || result.WishProgress != 1 {
+		t.Fatalf("completed wish target = %+v, %v", result, err)
 	}
 }
 
