@@ -39,6 +39,9 @@ func TestLoadRepositoryConfig(t *testing.T) {
 	if config.AssetsEnabled || config.Assets != 0 || config.Reserve != 0 || config.TargetMonthlySpend != 0 {
 		t.Errorf("asset defaults = enabled %t, assets %.2f, reserve %.2f, target %.2f; want disabled", config.AssetsEnabled, config.Assets, config.Reserve, config.TargetMonthlySpend)
 	}
+	if got := config.BalanceStartDate.Format("2006-01-02"); got != "2026-07-17" {
+		t.Errorf("BalanceStartDate = %s, want 2026-07-17", got)
+	}
 	if config.RetirementMode != "full" || config.RetirementUnit != "days" || config.HideAmounts || config.HideRetirementDate {
 		t.Errorf("display defaults = mode %q, unit %q, hide amounts %t, hide retirement %t", config.RetirementMode, config.RetirementUnit, config.HideAmounts, config.HideRetirementDate)
 	}
@@ -306,6 +309,7 @@ func TestDisplayAndPrivacyConfigRoundTrip(t *testing.T) {
 	config.HideRetirementDate = true
 	config.Slogan = "自定义口号"
 	config.TargetMonthlySpend = 3000
+	config.BalanceStartDate = mustDate("2026-07-01")
 	if err := saveConfig(config, path); err != nil {
 		t.Fatal(err)
 	}
@@ -313,7 +317,7 @@ func TestDisplayAndPrivacyConfigRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if loaded.RetirementMode != "countdown" || loaded.RetirementUnit != "workdays" || !loaded.HideAmounts || !loaded.HideRetirementDate || loaded.Slogan != "自定义口号" || loaded.TargetMonthlySpend != 3000 {
+	if loaded.RetirementMode != "countdown" || loaded.RetirementUnit != "workdays" || !loaded.HideAmounts || !loaded.HideRetirementDate || loaded.Slogan != "自定义口号" || loaded.TargetMonthlySpend != 3000 || loaded.BalanceStartDate.Format("2006-01-02") != "2026-07-01" {
 		t.Fatalf("round trip display config = %#v", loaded)
 	}
 }

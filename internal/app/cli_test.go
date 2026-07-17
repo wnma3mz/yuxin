@@ -204,6 +204,22 @@ func TestRunConfigExportImportAndClear(t *testing.T) {
 	}
 }
 
+func TestRunMigratesLegacyAssetBalanceStartDate(t *testing.T) {
+	path := writeTestConfig(t, "version = 1\n[[assets]]\nbalance = \"100000\"\n")
+	now := time.Date(2026, time.July, 16, 15, 0, 0, 0, time.Local)
+	code, _, stderr := runForTestAt(t, []string{"once", "--config", path}, "", now)
+	if code != 0 || stderr != "" {
+		t.Fatalf("legacy migration = code %d, stderr %q", code, stderr)
+	}
+	config, err := loadConfig(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.balanceDateMissing || config.BalanceStartDate.Format("2006-01-02") != "2026-07-16" {
+		t.Fatalf("balance start migration = %s, missing %t", config.BalanceStartDate, config.balanceDateMissing)
+	}
+}
+
 func TestRunReportsDataCommandErrors(t *testing.T) {
 	directory := t.TempDir()
 	invalidConfig := filepath.Join(directory, "invalid.toml")

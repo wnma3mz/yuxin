@@ -4,22 +4,19 @@ set -eu
 
 repository="https://github.com/wnma3mz/yuxin"
 
-case "$(uname -s)" in
+detected_system="${YUXIN_SYSTEM:-$(uname -s)}"
+case "$detected_system" in
   Darwin) system="macos" ;;
   Linux) system="linux" ;;
   *) echo "不支持当前操作系统。" >&2; exit 1 ;;
 esac
 
-case "$(uname -m)" in
+detected_architecture="${YUXIN_ARCHITECTURE:-$(uname -m)}"
+case "$detected_architecture" in
   arm64|aarch64) architecture="arm64" ;;
   x86_64|amd64) architecture="x86_64" ;;
   *) echo "不支持当前处理器架构。" >&2; exit 1 ;;
 esac
-
-if [ "$system" = "linux" ] && [ "$architecture" = "arm64" ]; then
-  echo "当前发布版尚不支持 Linux ARM64。" >&2
-  exit 1
-fi
 
 for command in curl unzip; do
   if ! command -v "$command" >/dev/null 2>&1; then

@@ -309,6 +309,7 @@ func TestWizardSummaryHonorsPrivacySettings(t *testing.T) {
 func TestConfigWizardDoesNotSaveNoOpEdit(t *testing.T) {
 	config := testFullConfig()
 	config.AssetItems = []AssetItem{{Name: "存款", Kind: "deposit", Balance: config.Assets}}
+	config.BalanceStartDate = mustDate("2026-01-01")
 	path := filepath.Join(t.TempDir(), "config.toml")
 	var output bytes.Buffer
 	updated, err := configureConfig(strings.NewReader("4\n\n0\n0\n"), &output, path, config)

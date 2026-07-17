@@ -50,11 +50,13 @@ type Config struct {
 	FemaleTrack        string
 	AssetsEnabled      bool
 	Assets             float64
+	BalanceStartDate   time.Time
 	AssetItems         []AssetItem
 	Reserve            float64
 	TargetMonthlySpend float64
 	HideAmounts        bool
 	HideRetirementDate bool
+	balanceDateMissing bool
 }
 
 type AssetItem struct {
@@ -81,15 +83,17 @@ func defaultConfig() Config {
 			time.Monday: true, time.Tuesday: true, time.Wednesday: true,
 			time.Thursday: true, time.Friday: true,
 		},
-		StartSecond:    9 * 3600,
-		EndSecond:      18 * 3600,
-		LunchEnabled:   true,
-		LunchStart:     12 * 3600,
-		LunchEnd:       13 * 3600,
-		ProfileEnabled: false,
-		BirthDate:      birth,
-		Sex:            "male",
-		AssetsEnabled:  false,
+		StartSecond:        9 * 3600,
+		EndSecond:          18 * 3600,
+		LunchEnabled:       true,
+		LunchStart:         12 * 3600,
+		LunchEnd:           13 * 3600,
+		ProfileEnabled:     false,
+		BirthDate:          birth,
+		Sex:                "male",
+		BalanceStartDate:   today,
+		AssetsEnabled:      false,
+		balanceDateMissing: true,
 	}
 }
 
@@ -310,6 +314,7 @@ func saveConfig(config Config, path string) error {
 		"retirement_unit = " + q(config.RetirementUnit),
 		"reserve = " + q(configNumber(config.Reserve)),
 		"target_monthly_spend = " + q(configNumber(config.TargetMonthlySpend)),
+		"balance_start_date = " + q(config.BalanceStartDate.Format("2006-01-02")),
 		"assets_enabled = " + strconv.FormatBool(config.AssetsEnabled),
 		"profile_enabled = " + strconv.FormatBool(config.ProfileEnabled),
 		"",
@@ -386,6 +391,7 @@ func supportedConfigKey(section, key string) bool {
 		".version": true, ".refresh_interval": true, ".slogan": true, ".retirement_years": true,
 		".retirement_start_date": true, ".progress_birth_date": true, ".reserve": true,
 		".target_monthly_spend": true,
+		".balance_start_date":   true,
 		".retirement_mode":      true, ".retirement_unit": true,
 		".assets_enabled": true, ".profile_enabled": true,
 		"salary.mode": true, "salary.amount": true, "salary.monthly_workdays": true,
@@ -447,6 +453,13 @@ func applyConfigValue(config *Config, section, key, value string) error {
 			return err
 		}
 		config.TargetMonthlySpend = amount
+	case ".balance_start_date":
+		parsed, err := parseDate(value)
+		if err != nil {
+			return err
+		}
+		config.BalanceStartDate = parsed
+		config.balanceDateMissing = false
 	case ".assets_enabled":
 		enabled, err := parseBool(value)
 		if err != nil {

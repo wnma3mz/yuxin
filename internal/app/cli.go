@@ -123,6 +123,14 @@ func runAt(args []string, stdin, stdout, stderr *os.File, now time.Time) int {
 		fmt.Fprintf(stderr, "错误：读取配置 %s：%v\n", path, err)
 		return 2
 	}
+	if config.AssetsEnabled && config.balanceDateMissing {
+		config.BalanceStartDate = configDateOnly(now)
+		config.balanceDateMissing = false
+		if err := saveConfig(config, path); err != nil {
+			fmt.Fprintf(stderr, "错误：迁移存款累计起算日：%v\n", err)
+			return 2
+		}
+	}
 	if err := validateConfig(config); err != nil {
 		fmt.Fprintf(stderr, "错误：%v\n", err)
 		return 2

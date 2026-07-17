@@ -304,6 +304,9 @@ func (wizard configWizard) editAssets(config Config) (Config, error) {
 		return config, err
 	}
 	config.Reserve = 0
+	if amount != config.Assets {
+		config.BalanceStartDate = configDateOnly(time.Now())
+	}
 	config.Assets = amount
 	config.AssetsEnabled = amount > 0
 	if amount == 0 {

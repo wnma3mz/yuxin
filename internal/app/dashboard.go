@@ -238,7 +238,9 @@ func CalculateDashboard(now time.Time, config Config) (DashboardSnapshot, error)
 	spendable := 0.0
 	if config.AssetsEnabled {
 		totalAssets = config.Assets
-		liveBalance = totalAssets + salary.EarnedToday
+		completedWorkdays := CountConfiguredWorkdays(config.BalanceStartDate, normalizedDate(now), config)
+		completedSalary := dailyRate(config, effectiveWorkSeconds(config)) * float64(completedWorkdays)
+		liveBalance = totalAssets + completedSalary + salary.EarnedToday
 		spendable = math.Max(0, liveBalance-config.Reserve)
 	}
 	remainingWorkdays := 0

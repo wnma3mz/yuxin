@@ -1,12 +1,19 @@
 $ErrorActionPreference = "Stop"
 
 $repository = "https://github.com/wnma3mz/yuxin"
-$architecture = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
-if ($architecture -ne "X64") {
-    throw "当前发布版尚不支持 Windows $architecture。"
+$architecture = if ($env:YUXIN_ARCHITECTURE) {
+    $env:YUXIN_ARCHITECTURE
+} else {
+    [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
+}
+$releaseArchitecture = switch ($architecture.ToUpperInvariant()) {
+    "X64" { "x86_64" }
+    "AMD64" { "x86_64" }
+    "ARM64" { "arm64" }
+    default { throw "暂不支持 Windows $architecture。" }
 }
 
-$asset = "yuxin-windows-x86_64.zip"
+$asset = "yuxin-windows-$releaseArchitecture.zip"
 $base = if ($env:YUXIN_RELEASE_BASE) {
     $env:YUXIN_RELEASE_BASE.TrimEnd("/", "\")
 } else {
@@ -40,7 +47,7 @@ function Receive-ReleaseFile {
 try {
     $archive = Join-Path $temporary $asset
     $checksumFile = "$archive.sha256"
-    Write-Host "正在下载 Yuxin 最新正式版（windows/x86_64）…"
+    Write-Host "正在下载 Yuxin 最新正式版（windows/$releaseArchitecture）…"
     Receive-ReleaseFile -Name $asset -Destination $archive
     Receive-ReleaseFile -Name "$asset.sha256" -Destination $checksumFile
 

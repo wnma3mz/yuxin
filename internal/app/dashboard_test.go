@@ -198,6 +198,38 @@ func TestDashboardCombinesAssetsAndRemainingWork(t *testing.T) {
 	}
 }
 
+func TestDashboardAccumulatesSalaryAcrossWorkdays(t *testing.T) {
+	config := testFullConfig()
+	config.SalaryMode = "daily"
+	config.SalaryAmount = 100
+	config.Assets = 100000
+	config.BalanceStartDate = testDate("2026-07-13 00:00:00")
+	result, err := CalculateDashboard(testDate("2026-07-16 11:00:00"), config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Monday through Wednesday are complete, and Thursday is 25% complete.
+	if result.LiveBalance != 100325 {
+		t.Fatalf("live balance = %.2f, want 100325", result.LiveBalance)
+	}
+}
+
+func TestDashboardAccumulationHonorsHolidaysAndMakeupDays(t *testing.T) {
+	config := testFullConfig()
+	config.SalaryMode = "daily"
+	config.SalaryAmount = 100
+	config.Assets = 100000
+	config.BalanceStartDate = testDate("2026-10-01 00:00:00")
+	result, err := CalculateDashboard(testDate("2026-10-12 11:00:00"), config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// October 1-7 are holidays; October 8-9 and the October 10 makeup day are complete.
+	if result.LiveBalance != 100325 {
+		t.Fatalf("holiday-aware live balance = %.2f, want 100325", result.LiveBalance)
+	}
+}
+
 func TestDashboardCalculatesSavingsTargetToRetirement(t *testing.T) {
 	config := testFullConfig()
 	config.Assets = 100000

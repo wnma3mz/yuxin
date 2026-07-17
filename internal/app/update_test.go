@@ -21,7 +21,9 @@ func TestReleasePlatform(t *testing.T) {
 	}{
 		{"darwin", "arm64", "macos-arm64"},
 		{"darwin", "amd64", "macos-x86_64"},
+		{"linux", "arm64", "linux-arm64"},
 		{"linux", "amd64", "linux-x86_64"},
+		{"windows", "arm64", "windows-arm64"},
 		{"windows", "amd64", "windows-x86_64"},
 	}
 	for _, test := range tests {
@@ -29,9 +31,6 @@ func TestReleasePlatform(t *testing.T) {
 		if err != nil || got != test.want {
 			t.Errorf("releasePlatform(%q, %q) = %q, %v", test.goos, test.goarch, got, err)
 		}
-	}
-	if _, err := releasePlatform("linux", "arm64"); err == nil {
-		t.Fatal("unsupported platform unexpectedly succeeded")
 	}
 	if _, err := releasePlatform("plan9", "amd64"); err == nil {
 		t.Fatal("unsupported operating system unexpectedly succeeded")

@@ -153,7 +153,7 @@ func releasePlatform(goos, goarch string) (string, error) {
 		return "", fmt.Errorf("暂不支持处理器架构 %s", goarch)
 	}
 	osName := map[string]string{"darwin": "macos", "linux": "linux", "windows": "windows"}[goos]
-	if osName == "" || osName != "macos" && arch == "arm64" {
+	if osName == "" {
 		return "", fmt.Errorf("暂不支持平台 %s/%s", goos, goarch)
 	}
 	return osName + "-" + arch, nil

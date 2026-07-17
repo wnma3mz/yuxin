@@ -21,18 +21,38 @@ jobs:
           - os: ubuntu-22.04
             platform: linux-x86_64
             executable: dist/yuxin
+            goos: linux
+            goarch: amd64
             smoke: ./dist/yuxin --version
+          - os: ubuntu-22.04
+            platform: linux-arm64
+            executable: dist/yuxin
+            goos: linux
+            goarch: arm64
+            smoke: ""
           - os: windows-latest
             platform: windows-x86_64
             executable: dist/yuxin.exe
+            goos: windows
+            goarch: amd64
             smoke: .\dist\yuxin.exe --version
+          - os: ubuntu-22.04
+            platform: windows-arm64
+            executable: dist/yuxin.exe
+            goos: windows
+            goarch: arm64
+            smoke: ""
           - os: macos-15
             platform: macos-arm64
             executable: dist/yuxin
+            goos: darwin
+            goarch: arm64
             smoke: ./dist/yuxin --version
           - os: macos-15-intel
             platform: macos-x86_64
             executable: dist/yuxin
+            goos: darwin
+            goarch: amd64
             smoke: ./dist/yuxin --version
 
     runs-on: ${{ matrix.os }}
@@ -50,8 +70,13 @@ jobs:
       - name: Prepare output directory
         run: mkdir dist
       - name: Build standalone executable
+        env:
+          CGO_ENABLED: "0"
+          GOARCH: ${{ matrix.goarch }}
+          GOOS: ${{ matrix.goos }}
         run: go build -trimpath -ldflags="-s -w -buildid=" -o "${{ matrix.executable }}" ./cmd/yuxin
       - name: Smoke test
+        if: matrix.smoke != ''
         run: ${{ matrix.smoke }}
       - name: Package release archive
         run: >-
@@ -109,3 +134,52 @@ jobs:
           --verify-tag
           --title "$GITHUB_REF_NAME"
           --notes-file release-notes.md
+
+  publish-homebrew:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: release
+    runs-on: ubuntu-latest
+    concurrency:
+      group: publish-homebrew
+      cancel-in-progress: false
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          path: source
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: yuxin-*
+          path: release
+          merge-multiple: true
+      - name: Check tap credentials
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: test -n "$HOMEBREW_TAP_TOKEN"
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          repository: wnma3mz/homebrew-tap
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: tap
+      - name: Generate formula from release checksums
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          read -r arm64_sha256 arm64_file < release/yuxin-macos-arm64.zip.sha256
+          read -r x86_64_sha256 x86_64_file < release/yuxin-macos-x86_64.zip.sha256
+          test "$arm64_file" = "yuxin-macos-arm64.zip"
+          test "$x86_64_file" = "yuxin-macos-x86_64.zip"
+          source/scripts/generate-homebrew-formula.sh \
+            "$version" "$arm64_sha256" "$x86_64_sha256" tap/Formula/yuxin.rb
+      - name: Push formula update
+        working-directory: tap
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Formula/yuxin.rb
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m "yuxin ${GITHUB_REF_NAME#v}"
+          git push
