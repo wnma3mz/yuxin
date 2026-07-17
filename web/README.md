@@ -1,8 +1,10 @@
 # Yuxin 匿名数据看板
 
-> 状态：本地实现、Mock/冷启动预览与生产构建已完成；目标 Supabase 仍需应用 `002`、`003` migration。尚未部署。
+> 状态：已部署上线；目标 Supabase migrations、GitHub Pages 与公开 URL 验收均已完成。
 
 Supabase Project ID：`nubeymzysjmlwgzjpstl`；Project URL：`https://nubeymzysjmlwgzjpstl.supabase.co`；区域：Northeast Asia (Tokyo)，`ap-northeast-1`。仓库与前端只使用 publishable key，绝不使用 secret/service-role key。GitHub Pages 使用默认地址 `https://wnma3mz.github.io/yuxin/`。
+
+[打开线上看板](https://wnma3mz.github.io/yuxin/)
 
 这个目录用于独立的公开 GitHub Pages 站点。它允许访客主动、匿名地贡献一组 Yuxin 相关数据，并向所有人展示聚合后的统计看板。它不是个人数据管理工具，不提供个人主页、个人看板或账号体系。CLI 仍保持离线、本地优先；网页不会自动读取本机的 `yuxin.toml` 或 `~/.config/yuxin/config.toml`。
 

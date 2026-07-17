@@ -5,6 +5,7 @@
 [![Go](https://img.shields.io/github/go-mod/go-version/wnma3mz/yuxin?logo=go&logoColor=white)](https://github.com/wnma3mz/yuxin/blob/main/go.mod)
 [![License](https://img.shields.io/github/license/wnma3mz/yuxin?logo=opensourceinitiative&logoColor=white)](LICENSE)
 [![Platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-64748b?logo=gnometerminal&logoColor=white)](https://github.com/wnma3mz/yuxin/releases/latest)
+[![Public Dashboard](https://img.shields.io/badge/public_dashboard-online-65df9a?logo=githubpages&logoColor=white)](https://wnma3mz.github.io/yuxin/)
 
 ![Yuxin 终端演示](https://raw.githubusercontent.com/wnma3mz/yuxin/main/docs/assets/yuxin-demo.gif)
 
@@ -13,6 +14,8 @@
 摸鱼有数，下班有期。
 
 Yuxin 是一个本地离线运行的终端工作仪表盘，实时展示今日入账、下班倒计时和节假日进度，并按需提供轻量退休倒计时、存款显示和隐私演示。
+
+[查看余薪匿名公开数据看板](https://wnma3mz.github.io/yuxin/)
 
 ## 安装与直接运行
 
