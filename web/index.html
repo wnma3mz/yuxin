@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="余薪匿名数据看板：匿名贡献工作与生活数据，查看所有参与者的公开聚合结果。"
+    />
+    <meta name="theme-color" content="#0d1917" />
+    <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+    <title>余薪匿名数据看板</title>
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">跳到主要内容</a>
+    <header class="site-header">
+      <a class="brand" href="#top" aria-label="余薪匿名数据看板首页">
+        <span class="brand-mark" aria-hidden="true">余</span>
+        <span><strong>余薪</strong><small>YUXIN PUBLIC</small></span>
+      </a>
+      <nav aria-label="主导航">
+        <a href="#dashboard">数据看板</a>
+        <a href="#echoes">匿名回声</a>
+        <a class="nav-action" href="#contribute">贡献数据</a>
+      </nav>
+    </header>
+
+    <main id="main-content">
+      <section class="hero" id="top">
+        <div class="hero-copy">
+          <p class="eyebrow">摸鱼有数，下班有期。</p>
+          <h1>看看大家，<br /><span>都怎样上班。</span></h1>
+          <p class="hero-intro">
+            一份由匿名贡献共同组成的公开样本。这里只展示聚合结果，不公开任何人的单条工资、存款或退休数据。
+          </p>
+          <div class="hero-actions">
+            <a class="button button-primary" href="#contribute">匿名贡献一份</a>
+            <a class="button button-quiet" href="#dashboard">先看看数据</a>
+          </div>
+          <ul class="privacy-points" aria-label="隐私说明">
+            <li>无需注册</li>
+            <li>不要求身份信息</li>
+            <li>只公开聚合数据</li>
+          </ul>
+        </div>
+        <div class="hero-card" aria-label="数据原则">
+          <div class="terminal-bar"><span></span><span></span><span></span><code>public.yuxin</code></div>
+          <div class="terminal-body">
+            <button class="terminal-command" type="button" data-command="brew install wnma3mz/tap/yuxin"><span><i class="prompt">$</i> brew install wnma3mz/tap/yuxin</span><small>复制</small></button>
+            <button class="terminal-command" type="button" data-command="yuxin share --anonymous"><span><i class="prompt">$</i> yuxin share --anonymous</span><small>复制</small></button>
+            <p class="terminal-success" id="terminal-status" aria-live="polite">✓ 本地区间计算完成 · 尚未上传</p>
+            <dl>
+              <div><dt>应用数据</dt><dd>不含身份字段</dd></div>
+              <div><dt>原始记录</dt><dd>不公开</dd></div>
+              <div><dt>匿名回声</dt><dd>审核后展示</dd></div>
+            </dl>
+            <p class="terminal-cursor">所有人的一点真实，拼成一张更大的图。<i></i></p>
+          </div>
+        </div>
+      </section>
+
+      <div id="connection-notice" class="notice" role="status" hidden></div>
+
+      <section class="section dashboard-section" id="dashboard" aria-labelledby="dashboard-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">PUBLIC DASHBOARD</p>
+            <h2 id="dashboard-title">大家的上班样本</h2>
+          </div>
+          <p id="dashboard-update">等待公开数据</p>
+        </div>
+
+        <div class="macro-grid" id="metric-grid" aria-live="polite">
+          <article class="macro-overview">
+            <p class="movement-label">01 / 打工人宏观全貌</p>
+            <div class="macro-values">
+              <div><span>公开样本</span><strong id="metric-total">—</strong><small>每满 10 份整批公开</small></div>
+              <div><span>样本月薪中位数</span><strong id="metric-salary">—</strong><small id="metric-salary-samples">暂无样本</small></div>
+              <div><span>折算时薪中位数</span><strong id="metric-hourly">—</strong><small>薪资 ÷ 净工时折算</small></div>
+            </div>
+            <div class="macro-foot">
+              <div class="macro-foot-stat"><span>每日纯打工时长中位数</span><strong id="metric-hours">—</strong><small id="metric-hours-samples">暂无样本</small></div>
+            </div>
+          </article>
+          <article class="pulse-spotlight" aria-label="按样本时薪中位数计算的本页停留期间累计收入">
+            <div class="spotlight-orbit" aria-hidden="true"></div>
+            <p class="movement-label">实时脉冲</p>
+            <span><i aria-hidden="true"></i><span id="pulse-status">等待公开样本</span></span>
+            <strong id="metric-live-income" aria-hidden="true">+¥0.00</strong>
+            <small id="pulse-window">以 09:00 为统一起点，按净工时中位数推算</small>
+            <b class="metric-hot">LIVE</b>
+          </article>
+        </div>
+
+        <section class="insight-stage" id="value-heading" aria-label="公开样本洞察">
+          <header class="insight-stage-toolbar">
+            <div class="insight-mode-switch" role="tablist" aria-label="选择数据主题">
+              <button id="work-insight-tab" type="button" role="tab" data-insight-mode="work" aria-selected="true" aria-controls="work-insight-panel"><span>02</span> 性价比大考</button>
+              <button id="chill-insight-tab" type="button" role="tab" data-insight-mode="chill" aria-selected="false" aria-controls="chill-insight-panel"><span>03</span> 赛博躺平指数</button>
+            </div>
+            <div class="dashboard-view-switch" role="group" aria-label="数据呈现方式">
+              <button type="button" data-insight-view="matrix" aria-pressed="true">象限洞察</button>
+              <button type="button" data-insight-view="detail" aria-pressed="false">分布明细</button>
+            </div>
+          </header>
+
+          <div id="work-insight-panel" role="tabpanel" aria-labelledby="work-insight-tab">
+            <div class="insight-title">
+              <div><p class="movement-label">WORK VALUE</p><h3>拿多少，干多久。</h3></div>
+              <small id="work-matrix-thresholds">以公开样本中位数为十字线</small>
+            </div>
+            <article class="matrix-card" id="chart-grid">
+              <div class="matrix-plot">
+                <span class="axis-label axis-y-high">薪资 · 高</span>
+                <span class="axis-label axis-y-low">薪资 · 低</span>
+                <span class="axis-label axis-x-low">工时 · 少</span>
+                <span class="axis-label axis-x-high">工时 · 多</span>
+                <div class="quadrant-grid" id="matrix-work" aria-label="月薪与每日净工时四象限"></div>
+              </div>
+              <p class="matrix-comment" id="comment-work-matrix" aria-live="polite">[ CLICK ] 点击一个象限，看看这份班的性价比旁白。</p>
+            </article>
+            <div class="work-distribution-grid" id="distribution-grid" hidden>
+              <article class="chart-card chart-card-primary">
+                <div class="chart-section">
+                  <div class="chart-title"><div><span class="chart-icon">¥</span><h3>月薪分布</h3></div><small>人民币 / 月</small></div>
+                  <div class="bar-chart" id="chart-salary" aria-label="月薪区间分布"></div>
+                  <p class="chart-comment" id="comment-salary" aria-live="polite">[ CLICK ] 选一个工资区间，听听它的嘴替。</p>
+                </div>
+                <div class="chart-section">
+                  <div class="chart-title"><div><span class="chart-icon">⌛</span><h3>每日纯打工时长</h3></div><small>已扣除午休</small></div>
+                  <div class="bar-chart" id="chart-hours" aria-label="每日纯打工时长分布"></div>
+                  <p class="chart-comment" id="comment-workHours" aria-live="polite">[ CLICK ] 选一个工时区间，看看班味有多重。</p>
+                </div>
+              </article>
+            </div>
+          </div>
+
+          <div id="chill-insight-panel" role="tabpanel" aria-labelledby="chill-insight-tab" hidden>
+            <div class="insight-title">
+              <div><p class="movement-label">CHILL INDEX</p><h3>如果大家现在躺平。</h3></div>
+              <p><span id="chill-view-meta">月薪 × 躺平日均预算</span><br /><span id="lay-flat-samples">等待完整样本</span></p>
+            </div>
+            <article class="lay-flat-panel" id="lay-flat-card" aria-live="polite">
+              <section class="chill-matrix-section matrix-card" id="chill-matrix-section">
+                <div class="matrix-plot">
+                  <span class="axis-label axis-y-high">薪资 · 高</span>
+                  <span class="axis-label axis-y-low">薪资 · 低</span>
+                  <span class="axis-label axis-x-low">躺平压力 · 低</span>
+                  <span class="axis-label axis-x-high">躺平压力 · 高</span>
+                  <div class="quadrant-grid" id="matrix-chill" aria-label="月薪与躺平日均预算四象限"></div>
+                </div>
+                <p class="matrix-comment" id="comment-chill-matrix" aria-live="polite">[ CLICK ] 赚得多不等于能躺，点击象限看状态旁白。</p>
+              </section>
+              <div class="chill-distribution-grid" id="chill-distribution-grid" hidden>
+                <article class="chart-card chart-card-primary">
+                  <div class="chart-section">
+                    <div class="chart-title"><div><span class="chart-icon">▰</span><h3>存款分布</h3></div><small id="savings-samples">选填项</small></div>
+                    <div class="bar-chart bar-chart-noted" id="chart-savings" aria-label="存款区间分布"></div>
+                    <p class="chart-comment" id="comment-savings" aria-live="polite">[ CLICK ] 存款不排名，只看看选择权攒到哪。</p>
+                  </div>
+                  <div class="chart-section">
+                    <div class="chart-title"><div><span class="chart-icon">◷</span><h3>距离退休</h3></div><small id="retirement-samples">选填项</small></div>
+                    <div class="bar-chart" id="chart-retirement" aria-label="距离退休年数分布"></div>
+                    <p class="chart-comment" id="comment-retirement" aria-live="polite">[ CLICK ] 选一个区间，给漫长倒计时配句旁白。</p>
+                  </div>
+                </article>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <div class="empty-state" id="dashboard-empty" hidden>
+          <strong>还没有公开样本</strong>
+          <p>成为第一个匿名贡献数据的人。</p>
+        </div>
+      </section>
+
+      <section class="section echo-section" id="echoes" aria-labelledby="echoes-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">ANONYMOUS ECHOES</p>
+            <h2 id="echoes-title">匿名回声</h2>
+          </div>
+          <div class="echo-tools"><p>听听大家在想什么；这里只展示审核后的话，不展示作者，也不关联工资和存款。</p><button id="echo-refresh" type="button" disabled>[r] 随机听听</button></div>
+        </div>
+        <div class="echo-grid" id="echo-grid" aria-live="polite"></div>
+        <div class="empty-state compact" id="echo-empty">
+          <strong>这里还很安静</strong>
+          <p>建议、吐槽、许愿和打气，都会先经过审核再出现在这里。</p>
+        </div>
+      </section>
+
+      <section class="section contribute-section" id="contribute" aria-labelledby="contribute-title">
+        <div class="contribute-copy">
+          <p class="eyebrow">CONTRIBUTE ONCE</p>
+          <h2 id="contribute-title">匿名贡献你的样本</h2>
+          <p>所有数值只进入总体统计，不会以单条记录公开。提交是单向的，第一版暂不提供修改、删除或找回。</p>
+          <div class="data-boundary">
+            <h3>应用数据边界</h3>
+            <p>Yuxin 的结构化数据不设置姓名、邮箱、手机号、单位、职位、城市、年龄、性别、生日、IP、User-Agent 或设备 ID；匿名回声是自由文本，请勿主动填写身份信息。这次不装神秘：提交会经过 Supabase，网络服务仍可能按惯例处理 IP、请求时间和浏览器信息。</p>
+          </div>
+          <aside class="cli-shortcut" aria-label="终端用户快捷入口">
+            <div><strong>已经在终端配置过 Yuxin？</strong><span>直接在本地查看区间，再自行决定是否匿名贡献，不必在网页重复填写。</span></div>
+            <button class="cli-command" type="button" data-command="yuxin share --anonymous"><code>yuxin share --anonymous</code><small>复制</small></button>
+          </aside>
+        </div>
+
+        <form id="contribution-form" class="contribution-form" novalidate>
+          <fieldset>
+            <legend><span>01</span> 工作数据</legend>
+            <div class="field-grid three">
+              <label>月薪约数（元）<input name="monthlySalaryCny" type="number" min="100" max="10000000" step="100" inputmode="numeric" placeholder="例如 8000" required /><small>提交前自动按百元取整</small></label>
+              <label>每日净工时（小时）<input name="dailyWorkHours" type="number" min="1" max="16" step="0.5" inputmode="decimal" placeholder="例如 8" required /><small>请扣除午休时间</small></label>
+              <label>每周工作天数<input name="workdaysPerWeek" type="number" min="1" max="7" step="1" inputmode="numeric" placeholder="例如 5" required /></label>
+            </div>
+          </fieldset>
+
+          <fieldset>
+            <legend><span>02</span> 可选数据</legend>
+            <div class="field-grid two">
+              <label>当前存款约数（元）<input name="savingsCny" type="number" min="0" max="1000000000000" step="1000" inputmode="numeric" placeholder="不填写也可以" /><small>提交前自动按千元取整</small></label>
+              <label>距离预计退休（年）<input name="retirementYearsRemaining" type="number" min="0" max="82" step="1" inputmode="numeric" placeholder="例如 30" /></label>
+            </div>
+          </fieldset>
+
+          <fieldset>
+            <legend><span>03</span> 匿名回声 <em>可选</em></legend>
+            <div class="message-fields">
+              <fieldset class="message-kind-field">
+                <legend>类型</legend>
+                <div class="message-kind-options">
+                  <label class="kind-none"><input name="messageKind" type="radio" value="" checked /><span>跳过</span></label>
+                  <label class="kind-advice"><input name="messageKind" type="radio" value="advice" /><span>建议</span></label>
+                  <label class="kind-rant"><input name="messageKind" type="radio" value="rant" /><span>吐槽</span></label>
+                  <label class="kind-wish"><input name="messageKind" type="radio" value="wish" /><span>许愿</span></label>
+                  <label class="kind-encourage"><input name="messageKind" type="radio" value="encourage" /><span>打气</span></label>
+                </div>
+              </fieldset>
+              <label class="message-input">一句话<input name="messageText" type="text" maxlength="80" placeholder="说吧，今天公司又出了什么逆天规定？或者许愿哪天退休？" /><small><span id="message-count">0</span>/80 · 请勿填写姓名、联系方式、单位或地址</small></label>
+            </div>
+          </fieldset>
+
+          <section class="comparison-result" id="comparison-result" aria-labelledby="comparison-title" hidden>
+            <p>LOCAL COMPARISON · 不上传</p>
+            <h3 id="comparison-title">你在公开样本中的位置</h3>
+            <div id="comparison-grid"></div>
+            <small>这里只显示固定区间和该区间的样本占比，不形成个人排名。</small>
+          </section>
+
+          <label class="consent"><input name="consent" type="checkbox" required /><span>我已确认没有在匿名回声中填写身份信息，理解数值将降精度后进入公开聚合统计，也知晓 Supabase 可能保留必要的网络请求日志。</span></label>
+          <div id="form-error" class="form-message error" role="alert" hidden></div>
+          <div id="form-success" class="form-message success" role="status" hidden></div>
+          <div class="form-actions">
+            <button id="compare-button" class="button button-quiet" type="button">看看我在哪</button>
+            <button id="submit-button" class="button button-primary" type="submit">匿名贡献这份数据</button>
+          </div>
+        </form>
+      </section>
+    </main>
+
+    <dialog id="submit-confirm-dialog" class="confirm-dialog" aria-labelledby="confirm-title">
+      <form method="dialog">
+        <p class="eyebrow">ONE-WAY SUBMISSION</p>
+        <h2 id="confirm-title">确认发射这份匿名样本？</h2>
+        <p>提交后你无法自行找回或修改这条记录；管理员只会在数据异常或内容不合适时处理删除。</p>
+        <small>请求会经过 Supabase，其基础设施仍可能按网络惯例处理 IP、请求时间和浏览器信息。</small>
+        <div class="confirm-actions">
+          <button class="button button-quiet" value="cancel">我再想想</button>
+          <button class="button button-primary" value="confirm">确认匿名发射</button>
+        </div>
+      </form>
+    </dialog>
+
+    <footer>
+      <div><strong>余薪 YUXIN</strong><p>匿名数据看板 · 只公开聚合结果</p></div>
+      <a href="https://github.com/wnma3mz/yuxin">GitHub ↗</a>
+    </footer>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

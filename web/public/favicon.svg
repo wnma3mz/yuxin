@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect width="64" height="64" rx="16" fill="#65df9a"/>
+  <path d="M13 17h38v5H13zm4 9h30v5H17zm3 9h24v5H20z" fill="#0a1211" opacity=".18"/>
+  <text x="32" y="43" fill="#092016" font-family="-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif" font-size="30" font-weight="800" text-anchor="middle">余</text>
+</svg>

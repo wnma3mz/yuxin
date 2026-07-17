@@ -50,6 +50,15 @@ func TestShareAndConfigTransferArguments(t *testing.T) {
 	if err != nil || opts.command != "share" || !opts.shareReal || opts.shareCard != "workday" {
 		t.Fatalf("parseArgs(share) = %+v, %v", opts, err)
 	}
+	opts, err = parseArgs([]string{"share", "--anonymous"})
+	if err != nil || !opts.shareAnonymous {
+		t.Fatalf("parseArgs(share --anonymous) = %+v, %v", opts, err)
+	}
+	for _, args := range [][]string{{"share", "--anonymous", "--real"}, {"share", "--anonymous", "--card", "overview"}} {
+		if _, err := parseArgs(args); err == nil {
+			t.Errorf("parseArgs(%q) accepted conflicting share options", args)
+		}
+	}
 	opts, err = parseArgs([]string{"config", "export", "backup.toml"})
 	if err != nil || opts.configAction != "export" || opts.actionPath != "backup.toml" {
 		t.Fatalf("parseArgs(config export) = %+v, %v", opts, err)

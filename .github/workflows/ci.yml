@@ -10,6 +10,63 @@ permissions:
   contents: read
 
 jobs:
+  database:
+    name: Supabase SQL contract
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: yuxin_test
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d yuxin_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: "5432"
+      PGDATABASE: yuxin_test
+      PGUSER: postgres
+      PGPASSWORD: postgres
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Create Supabase public roles
+        run: |
+          psql -v ON_ERROR_STOP=1 <<'SQL'
+          create role anon noinherit nologin;
+          create role authenticated noinherit nologin;
+          SQL
+      - name: Apply migrations
+        shell: bash
+        run: |
+          for migration in web/supabase/migrations/*.sql; do
+            psql -v ON_ERROR_STOP=1 -f "$migration"
+          done
+      - name: Verify privacy contract
+        run: psql -v ON_ERROR_STOP=1 -f web/supabase/tests/privacy.sql
+
+  web:
+    name: Web test and build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - run: npm run audit
+
   test:
     name: Test (${{ matrix.os }})
     strategy:

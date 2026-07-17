@@ -125,6 +125,12 @@ func dailyRate(config Config, workSeconds int) float64 {
 	}
 }
 
+func liveBalanceAt(config Config, now time.Time, earnedToday float64) float64 {
+	completedWorkdays := CountConfiguredWorkdays(config.BalanceStartDate, normalizedDate(now), config)
+	completedSalary := dailyRate(config, effectiveWorkSeconds(config)) * float64(completedWorkdays)
+	return config.Assets + completedSalary + earnedToday
+}
+
 func hourlyRateForRestDay(config Config) float64 {
 	if config.SalaryMode == "hourly" {
 		return config.SalaryAmount
@@ -238,9 +244,7 @@ func CalculateDashboard(now time.Time, config Config) (DashboardSnapshot, error)
 	spendable := 0.0
 	if config.AssetsEnabled {
 		totalAssets = config.Assets
-		completedWorkdays := CountConfiguredWorkdays(config.BalanceStartDate, normalizedDate(now), config)
-		completedSalary := dailyRate(config, effectiveWorkSeconds(config)) * float64(completedWorkdays)
-		liveBalance = totalAssets + completedSalary + salary.EarnedToday
+		liveBalance = liveBalanceAt(config, now, salary.EarnedToday)
 		spendable = math.Max(0, liveBalance-config.Reserve)
 	}
 	remainingWorkdays := 0

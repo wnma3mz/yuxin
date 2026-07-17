@@ -118,6 +118,7 @@ yuxin doctor --strict 缺少本年度节假日数据时返回非零状态
 yuxin share           生成合成数据概览分享卡
 yuxin share --card workday  生成工作日倒计时卡
 yuxin share --real    显式生成真实数据分享卡
+yuxin share --anonymous  本地预览区间并确认后匿名贡献到公开看板
 yuxin update          安装 GitHub 最新正式版
 yuxin update --force  强制重装 Latest Release 并刷新随包数据
 yuxin uninstall       卸载程序并保留本地配置
@@ -131,7 +132,9 @@ yuxin --version       显示版本号
 
 ## 数据与计算口径
 
-所有配置都保存在本机。Yuxin 不连接银行、企业系统或其他账户，安装完成后的常规仪表盘不会调用外部 API。内置功能中只有用户主动运行 `yuxin update` 时才会访问 GitHub。
+所有配置都保存在本机。Yuxin 不连接银行、企业系统或其他账户，安装完成后的常规仪表盘不会调用外部 API。只有用户主动运行 `yuxin update` 时会访问 GitHub；主动运行 `yuxin share --anonymous`、检查待上传字段并输入 `SHARE` 后，才会向公开看板的 Supabase 服务提交降精度数据。
+
+匿名贡献不上传配置文件、年龄、生日、性别、姓名、单位、城市或设备标识；月薪按百元、存款按千元、工时按 30 分钟归一化，距离退休只提交整数年。应用数据表不保存 IP 或 User-Agent，但 Supabase 基础设施日志仍可能按网络服务惯例处理 IP、请求时间和 User-Agent，因此这里承诺的是应用层匿名化，而不是网络层不可追踪。
 
 ```text
 今日入账 = 当日有效工作秒数 × 每秒收入
@@ -157,10 +160,10 @@ go build -trimpath -ldflags="-s -w -buildid=" -o yuxin ./cmd/yuxin
 ./yuxin
 ```
 
-开发环境、演示素材生成和版本发布流程见[开发者文档](docs/development.md)。参与贡献前请阅读[贡献指南](.github/CONTRIBUTING.md)，版本变化见 [CHANGELOG.md](CHANGELOG.md)。
+开发环境、演示素材生成和版本发布流程见[开发者文档](https://github.com/wnma3mz/yuxin/blob/main/docs/development.md)。参与贡献前请阅读[贡献指南](https://github.com/wnma3mz/yuxin/blob/main/.github/CONTRIBUTING.md)，版本变化见 [CHANGELOG.md](https://github.com/wnma3mz/yuxin/blob/main/CHANGELOG.md)。
 
 ## License
 
 [MIT](LICENSE)
 
-欢迎参与项目。安全问题请按[安全政策](.github/SECURITY.md)私密报告。
+欢迎参与项目。安全问题请按[安全政策](https://github.com/wnma3mz/yuxin/blob/main/.github/SECURITY.md)私密报告。

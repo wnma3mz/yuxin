@@ -1,0 +1,19 @@
+{
+  "name": "yuxin-public-dashboard",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "preview": "vite preview",
+    "audit": "npm audit --audit-level=high --registry=https://registry.npmjs.org"
+  },
+  "devDependencies": {
+    "typescript": "7.0.2",
+    "vite": "8.1.5",
+    "vitest": "4.1.10"
+  }
+}
