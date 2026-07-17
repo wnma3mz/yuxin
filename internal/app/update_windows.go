@@ -33,7 +33,9 @@ func replaceExecutable(staged, target string) (bool, error) {
 		os.Remove(scriptPath)
 		return false, err
 	}
-	command := exec.Command("cmd.exe", "/C", "start", "", "/B", scriptPath, target, staged)
+	// Start cmd.exe directly. A nested `start` command reparses paths containing
+	// shell metacharacters such as &, even when os/exec quoted the arguments.
+	command := exec.Command("cmd.exe", "/C", scriptPath, target, staged)
 	if err := command.Start(); err != nil {
 		os.Remove(scriptPath)
 		return false, err
