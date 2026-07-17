@@ -165,7 +165,7 @@ func TestFormattingHelpers(t *testing.T) {
 	if got := truncate("余薪 YUXIN", 6); got != "余薪 …" {
 		t.Fatalf("truncate() = %q", got)
 	}
-	if runeWidth('\u0301') != 0 || runeWidth('薪') != 2 || runeWidth('\uFFFD') != 1 || runeWidth('A') != 1 {
+	if runeWidth('\u0301') != 0 || runeWidth('薪') != 2 || runeWidth('⏳') != 2 || runeWidth('\uFFFD') != 1 || runeWidth('A') != 1 {
 		t.Fatal("rune width variants failed")
 	}
 }

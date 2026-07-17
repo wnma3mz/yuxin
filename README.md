@@ -135,9 +135,9 @@ go build -trimpath -ldflags="-s -w -buildid=" -o yuxin ./cmd/yuxin
 ./yuxin
 ```
 
-项目已在 README 中提供使用固定合成数据的终端演示 GIF；可运行 `scripts/render-demo.sh` 按当前界面重新生成。
+项目已在 README 中提供使用固定合成数据的终端演示 GIF；安装 `asciinema` 和 `agg` 后，可运行 `scripts/render-demo.sh` 按当前界面重新生成。另行安装 FFmpeg 后，`scripts/render-promo.sh [OUTPUT]` 可生成 1080p 宣传视频评审稿。
 
-终端设计说明见 [docs/terminal-ui.md](https://github.com/wnma3mz/yuxin/blob/main/docs/terminal-ui.md)，[产品与发布路线](https://github.com/wnma3mz/yuxin/blob/main/docs/roadmap.md) 记录了实施状态，版本变化见 [CHANGELOG.md](https://github.com/wnma3mz/yuxin/blob/main/CHANGELOG.md)。
+终端设计说明见 [docs/terminal-ui.md](https://github.com/wnma3mz/yuxin/blob/main/docs/terminal-ui.md)，[演示与宣传视频计划](https://github.com/wnma3mz/yuxin/blob/main/docs/demo-video-plan.md) 记录了素材路线，[产品与发布路线](https://github.com/wnma3mz/yuxin/blob/main/docs/roadmap.md) 记录了实施状态，版本变化见 [CHANGELOG.md](https://github.com/wnma3mz/yuxin/blob/main/CHANGELOG.md)。
 
 ## 发布
 

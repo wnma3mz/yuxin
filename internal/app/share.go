@@ -6,31 +6,21 @@ import (
 	"strings"
 )
 
-const shareCardWidth = 58
+const shareCardWidth = 62
 
 // RenderShareCard renders a fixed-width, ANSI-free text card suitable for
 // copying into a message or screenshot. Callers choose whether snapshot comes
 // from DemoDashboard or the user's local configuration.
 func RenderShareCard(snapshot DashboardSnapshot, config Config, card string) (string, error) {
 	config = normalizedPrivacyConfig(config)
-	var rows []string
 	switch card {
 	case "overview":
-		rows = shareOverviewRows(snapshot, config)
+		return renderOverviewShareCard(snapshot, config), nil
 	case "workday":
-		rows = shareWorkdayRows(snapshot, config)
+		return renderWorkdayShareCard(snapshot, config), nil
 	default:
 		return "", fmt.Errorf("不支持的分享卡片 %q（可选 overview 或 workday）", card)
 	}
-
-	lines := []string{shareBorder("余薪 YUXIN · " + shareCardTitle(card))}
-	for _, row := range rows {
-		lines = append(lines, shareLine(row))
-	}
-	lines = append(lines, shareDivider())
-	lines = append(lines, shareLine("无账号  ·  离线运行  ·  数据只在本地"))
-	lines = append(lines, "╰"+strings.Repeat("─", shareCardWidth-2)+"╯")
-	return strings.Join(lines, "\n"), nil
 }
 
 func writeShareCard(output io.Writer, snapshot DashboardSnapshot, config Config, cardType string) error {
@@ -42,46 +32,102 @@ func writeShareCard(output io.Writer, snapshot DashboardSnapshot, config Config,
 	return err
 }
 
-func shareOverviewRows(snapshot DashboardSnapshot, config Config) []string {
-	countdownLabel := shareCountdownLabel(snapshot.Salary)
+func renderOverviewShareCard(snapshot DashboardSnapshot, config Config) string {
 	rows := []string{
-		shareDataLabel(snapshot),
-		shareMetric("今日入账", shareAmount(snapshot.Salary.EarnedToday, config.HideAmounts)),
-		shareMetric("今日预计", shareAmount(snapshot.Salary.ExpectedToday, config.HideAmounts)),
-		shareMetric("工作进度", fmt.Sprintf("%.1f%%", clampFloat(snapshot.Salary.Progress, 0, 1)*100)),
-		shareMetric(countdownLabel, shareRemaining(snapshot.Salary)),
+		shareDataLabel(snapshot, config),
+		shareDivider(),
+		shareLine(shareWorkProgress(snapshot.Salary)),
+		shareLine(shareIncome(snapshot.Salary, config.HideAmounts)),
+		shareLine(""),
 	}
 	if snapshot.Holiday != nil {
-		rows = append(rows, shareMetric("节假日", holidayText(*snapshot.Holiday)))
+		rows = append(rows, shareLine("🌴 盼头："+holidayText(*snapshot.Holiday)))
 	}
 	if snapshot.RetirementEnabled {
-		if config.HideRetirementDate {
-			rows = append(rows, shareMetric("退休信息", "已隐藏"))
-		} else if config.RetirementMode == "full" {
-			retirement := retirementDate(snapshot.Retirement)
-			rows = append(rows, shareMetric("预计退休", retirement))
-			rows = append(rows, shareMetric("距离退休", retirementDistance(snapshot)))
+		rows = append(rows, shareLine(shareRetirement(snapshot, config)))
+	}
+	if snapshot.RetirementEnabled && snapshot.AssetsEnabled {
+		rows = append(rows, shareLine(""), shareLine(shareDailyBudget(snapshot, config.HideAmounts)))
+	}
+	lines := []string{shareBorder(shareOverviewTitle(config))}
+	lines = append(lines, shareLine(rows[0]))
+	lines = append(lines, rows[1:]...)
+	lines = append(lines, shareDivider(), shareLine(shareFooter()), shareBottomBorder())
+	return strings.Join(lines, "\n")
+}
+
+func renderWorkdayShareCard(snapshot DashboardSnapshot, config Config) string {
+	lines := []string{shareBorder("余薪 YUXIN · 工作日倒计时")}
+	for _, row := range shareWorkdayRows(snapshot, config) {
+		lines = append(lines, shareLine(row))
+	}
+	lines = append(lines, shareDivider(), shareLine(shareFooter()), shareBottomBorder())
+	return strings.Join(lines, "\n")
+}
+
+func shareOverviewTitle(config Config) string {
+	slogan := strings.TrimSpace(config.Slogan)
+	slogan = strings.TrimRight(slogan, "。.!！")
+	if slogan == "" {
+		slogan = strings.TrimRight(defaultSlogan, "。")
+	}
+	return "余薪 YUXIN · " + slogan
+}
+
+func shareWorkProgress(salary SalarySnapshot) string {
+	percent := fmt.Sprintf("%.1f%%", clampFloat(salary.Progress, 0, 1)*100)
+	suffix := shareProgressSuffix(salary)
+	prefix := "⏳ 今日工作进度 ────"
+	barWidth := max(8, shareCardWidth-4-displayWidth(prefix)-displayWidth(percent)-displayWidth(suffix)-2)
+	filled := int(clampFloat(salary.Progress, 0, 1)*float64(barWidth) + 0.5)
+	bar := strings.Repeat("■", filled) + strings.Repeat("□", barWidth-filled)
+	return fmt.Sprintf("%s%s %s %s", prefix, bar, percent, suffix)
+}
+
+func shareProgressSuffix(salary SalarySnapshot) string {
+	switch salary.Status {
+	case "before-work":
+		return "(距上班 " + shareRemaining(salary) + ")"
+	case "working", "lunch-break":
+		return "(剩 " + shareRemaining(salary) + ")"
+	default:
+		return "(" + shareRemaining(salary) + ")"
+	}
+}
+
+func shareIncome(salary SalarySnapshot, hidden bool) string {
+	return fmt.Sprintf("💰 今日已经赚到 ──── %s / %s (预计)",
+		shareAmount(salary.EarnedToday, hidden), shareAmount(salary.ExpectedToday, hidden))
+}
+
+func shareRetirement(snapshot DashboardSnapshot, config Config) string {
+	if config.HideRetirementDate {
+		return "👴 退休：信息已隐藏"
+	}
+	distance := strings.NewReplacer(" 年", "年", " 个月", "个月", " 天", "天").Replace(retirementDistance(snapshot)) + "后"
+	value := "👴 退休：" + distance
+	if snapshot.SavingsTarget > 0 {
+		if config.HideAmounts {
+			value += " ── [存款目标已隐藏]"
 		} else {
-			rows = append(rows, shareMetric("距离退休", retirementDistance(snapshot)))
+			value += fmt.Sprintf(" ── [存款目标进度: %.0f%%]", clampFloat(snapshot.SavingsProgress, 0, 1)*100)
 		}
 	}
-	if snapshot.AssetsEnabled {
-		rows = append(rows, shareMetric("本地存款", shareAmount(snapshot.TotalAssets, config.HideAmounts)))
-		if snapshot.SavingsTarget > 0 {
-			value := "已隐藏"
-			if !config.HideAmounts {
-				value = fmt.Sprintf("%.0f%% · 还差 %s", snapshot.SavingsProgress*100, shareAmount(snapshot.SavingsGap, false))
-			}
-			rows = append(rows, shareMetric("存款目标", value))
-		}
+	return value
+}
+
+func shareDailyBudget(snapshot DashboardSnapshot, hidden bool) string {
+	if hidden {
+		return "💬 躺平生存指南 ──── 每天可花 已隐藏"
 	}
-	return rows
+	amount := shareAmount(snapshot.DailyUntilRetirement, false)
+	return fmt.Sprintf("💬 躺平生存指南 ──── 每天可花 %s (%s)", amount, purchasingPowerQuip(snapshot.DailyUntilRetirement))
 }
 
 func shareWorkdayRows(snapshot DashboardSnapshot, config Config) []string {
 	status, _ := statusText(snapshot.Salary.Status)
 	return []string{
-		shareDataLabel(snapshot),
+		shareDataLabel(snapshot, config),
 		shareMetric("今日状态", strings.TrimSpace(status)),
 		shareMetric(shareCountdownLabel(snapshot.Salary), shareRemaining(snapshot.Salary)),
 		shareMetric("已工作", duration(snapshot.Salary.ElapsedSeconds)),
@@ -90,18 +136,17 @@ func shareWorkdayRows(snapshot DashboardSnapshot, config Config) []string {
 	}
 }
 
-func shareCardTitle(card string) string {
-	if card == "workday" {
-		return "工作日倒计时"
-	}
-	return "概览分享卡"
-}
-
-func shareDataLabel(snapshot DashboardSnapshot) string {
+func shareDataLabel(snapshot DashboardSnapshot, config Config) string {
 	if snapshot.DemoMode {
-		return "演示数据 · 不包含个人信息"
+		return "[💡] 演示数据 · 已使用固定合成数据"
 	}
-	return "本地数据 · 请确认后分享"
+	if config.HideRetirementDate {
+		return "[✓] 本地数据 · 金额、存款和退休信息已隐藏"
+	}
+	if config.HideAmounts {
+		return "[✓] 本地数据 · 金额和存款已隐藏"
+	}
+	return "[!] 本地数据 · 尚未开启隐私保护"
 }
 
 func shareRemaining(salary SalarySnapshot) string {
@@ -144,6 +189,14 @@ func shareDivider() string {
 }
 
 func shareBorder(title string) string {
-	label := " " + title + " "
-	return "╭─" + label + strings.Repeat("─", shareCardWidth-3-displayWidth(label)) + "╮"
+	label := " " + truncate(title, shareCardWidth-5) + " "
+	return "╭─" + label + strings.Repeat("─", max(0, shareCardWidth-3-displayWidth(label))) + "╮"
+}
+
+func shareBottomBorder() string {
+	return "╰" + strings.Repeat("─", shareCardWidth-2) + "╯"
+}
+
+func shareFooter() string {
+	return "🏠 离线本地运行 · 数据绝不上云 · github.com/wnma3mz/yuxin"
 }

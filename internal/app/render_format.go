@@ -175,7 +175,7 @@ func runeWidth(char rune) int {
 	if char == '\u200d' || unicode.Is(unicode.Mn, char) || unicode.Is(unicode.Me, char) {
 		return 0
 	}
-	if char >= 0x1100 && (char <= 0x115f || char == 0x2329 || char == 0x232a ||
+	if char >= 0x1100 && (char <= 0x115f || char == 0x2329 || char == 0x232a || char == 0x23f3 ||
 		(char >= 0x2e80 && char <= 0xa4cf) || (char >= 0xac00 && char <= 0xd7a3) ||
 		(char >= 0xf900 && char <= 0xfaff) || (char >= 0xfe10 && char <= 0xfe6f) ||
 		(char >= 0xff00 && char <= 0xff60) || (char >= 0x1f300 && char <= 0x1faff)) {

@@ -156,7 +156,7 @@ func TestDoctorStrictReportsMissingHolidayData(t *testing.T) {
 
 func TestRunShareDefaultsToSyntheticData(t *testing.T) {
 	code, output, stderr := runForTest(t, []string{"share", "--config", "data/default-config.toml"}, "")
-	if code != 0 || stderr != "" || !strings.Contains(output, "演示数据") || !strings.Contains(output, "无账号") {
+	if code != 0 || stderr != "" || !strings.Contains(output, "演示数据") || !strings.Contains(output, "离线本地运行") {
 		t.Fatalf("share = code %d, output %q, stderr %q", code, output, stderr)
 	}
 	invalid := filepath.Join(t.TempDir(), "invalid.toml")
