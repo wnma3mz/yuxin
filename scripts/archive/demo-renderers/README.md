@@ -12,4 +12,4 @@
 go run scripts/archive/demo-renderers/native-macos/render.go /tmp/yuxin-demo-native
 ```
 
-对应样片保存在 `docs/assets/archive/`。
+对应样片默认写入系统临时目录，不再保存在仓库中；浏览器渲染脚本也可接收自定义输出目录作为第一个参数。

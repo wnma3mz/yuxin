@@ -2,7 +2,7 @@
 set -eu
 
 ROOT=$(CDPATH='' cd -- "$(dirname -- "$0")/../../../.." && pwd)
-OUTPUT="$ROOT/docs/assets/archive"
+OUTPUT=${1:-${TMPDIR:-/tmp}/yuxin-demo-browser-output}
 WORK=${TMPDIR:-/tmp}/yuxin-demo-browser
 CHROME=${CHROME:-/Applications/Google Chrome.app/Contents/MacOS/Google Chrome}
 
