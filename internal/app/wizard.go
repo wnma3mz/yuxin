@@ -45,9 +45,11 @@ func configureConfig(input io.Reader, output io.Writer, path string, current Con
 		case "4":
 			updated, err = wizard.editAssets(current)
 		case "5":
+			updated, err = wizard.editGoal(current)
+		case "6":
 			updated, err = wizard.editMore(current)
 		default:
-			fmt.Fprintln(output, "  请输入 0 到 5。")
+			fmt.Fprintln(output, "  请输入 0 到 6。")
 			continue
 		}
 		if err != nil {
@@ -89,19 +91,20 @@ func (wizard configWizard) summary(config Config) {
 	assets := "关闭"
 	if config.AssetsEnabled {
 		assets = displayMoney(config.Assets, config.HideAmounts)
-		switch {
-		case config.WishAmount > 0:
-			if config.HideAmounts {
-				assets += " · 心愿 已隐藏"
-			} else {
-				assets += " · 心愿 " + config.WishName
-			}
-		case config.TargetMonthlySpend > 0:
-			assets += " · 躺平目标 " + displayMoney(config.TargetMonthlySpend, config.HideAmounts) + "/月"
-		}
 	}
 	fmt.Fprintf(wizard.out, "  4 存款       %s\n", assets)
-	fmt.Fprintf(wizard.out, "  5 更多设置   刷新 %s\n", formatInterval(config.RefreshInterval))
+	goal := "关闭"
+	switch {
+	case config.WishAmount > 0:
+		goal = "心愿 " + config.WishName + " · " + displayMoney(config.WishAmount, config.HideAmounts)
+		if config.HideAmounts {
+			goal = "心愿 已隐藏"
+		}
+	case config.TargetMonthlySpend > 0 && config.AssetsEnabled:
+		goal = "躺平 " + displayMoney(config.TargetMonthlySpend, config.HideAmounts) + "/月"
+	}
+	fmt.Fprintf(wizard.out, "  5 目标计划   %s\n", goal)
+	fmt.Fprintf(wizard.out, "  6 更多设置   刷新 %s\n", formatInterval(config.RefreshInterval))
 }
 
 func (wizard configWizard) editSalary(config Config) (Config, error) {
@@ -246,6 +249,7 @@ func (wizard configWizard) editRetirement(config Config) (Config, error) {
 		config.RetirementYears = 0
 		config.RetirementStart = today
 		config.ProgressBirthDate = today
+		config.TargetMonthlySpend = 0
 		return config, nil
 	}
 	today := configDateOnly(time.Now())
@@ -346,57 +350,63 @@ func (wizard configWizard) editAssets(config Config) (Config, error) {
 	if amount == 0 {
 		config.AssetItems = nil
 		config.TargetMonthlySpend = 0
-		config.WishName = ""
-		config.WishAmount = 0
 	} else {
 		config.AssetItems = []AssetItem{{Name: "存款", Kind: "deposit", Balance: amount}}
-		defaultTarget := "0"
-		if config.TargetMonthlySpend > 0 {
-			defaultTarget = "1"
-		} else if config.WishAmount > 0 {
-			defaultTarget = "2"
-		}
-		target, err := wizard.choice("存款目标：0 关闭 / 1 躺平月支出 / 2 心愿物品", defaultTarget, "0", "1", "2")
-		if err != nil {
-			return config, err
-		}
-		switch target {
-		case "0":
-			config.TargetMonthlySpend = 0
-			config.WishName = ""
-			config.WishAmount = 0
-		case "1":
-			config.WishName = ""
-			config.WishAmount = 0
-			defaultSpend := config.TargetMonthlySpend
-			if defaultSpend <= 0 {
-				defaultSpend = 3000
-			}
-			config.TargetMonthlySpend, err = wizard.amount("目标每月可花", defaultSpend, false)
-			if err != nil {
-				return config, err
-			}
-		case "2":
-			config.TargetMonthlySpend = 0
-			for {
-				name, err := wizard.ask("心愿物品", config.WishName)
-				if err != nil {
-					return config, err
-				}
-				name = strings.TrimSpace(name)
-				if name != "" && utf8.RuneCountInString(name) <= maxSloganRunes && strings.IndexFunc(name, unicode.IsControl) < 0 {
-					config.WishName = name
-					break
-				}
-				fmt.Fprintf(wizard.out, "  心愿物品必须是 1 到 %d 个字且不能包含控制字符。\n", maxSloganRunes)
-			}
-			config.WishAmount, err = wizard.amount("目标金额", config.WishAmount, false)
-			if err != nil {
-				return config, err
-			}
-		}
 	}
 	return config, nil
+}
+
+func (wizard configWizard) editGoal(config Config) (Config, error) {
+	defaultTarget := "0"
+	if config.TargetMonthlySpend > 0 {
+		defaultTarget = "1"
+	} else if config.WishAmount > 0 {
+		defaultTarget = "2"
+	}
+	target, err := wizard.choice("目标计划：0 关闭 / 1 躺平月支出 / 2 心愿物品", defaultTarget, "0", "1", "2")
+	if err != nil {
+		return config, err
+	}
+	switch target {
+	case "0":
+		config.TargetMonthlySpend = 0
+		config.WishName = ""
+		config.WishAmount = 0
+		config.WishStartDate = configDateOnly(time.Now())
+	case "1":
+		if !config.AssetsEnabled || !config.ProfileEnabled {
+			fmt.Fprintln(wizard.out, "  躺平目标需要先开启存款和退休倒计时。")
+			return config, nil
+		}
+		config.WishName = ""
+		config.WishAmount = 0
+		config.WishStartDate = configDateOnly(time.Now())
+		defaultSpend := config.TargetMonthlySpend
+		if defaultSpend <= 0 {
+			defaultSpend = 3000
+		}
+		config.TargetMonthlySpend, err = wizard.amount("目标每月可花", defaultSpend, false)
+	case "2":
+		newWish := config.WishAmount <= 0 || config.WishName == ""
+		config.TargetMonthlySpend = 0
+		for {
+			name, nameErr := wizard.ask("心愿物品", config.WishName)
+			if nameErr != nil {
+				return config, nameErr
+			}
+			name = strings.TrimSpace(name)
+			if name != "" && utf8.RuneCountInString(name) <= maxSloganRunes && strings.IndexFunc(name, unicode.IsControl) < 0 {
+				config.WishName = name
+				break
+			}
+			fmt.Fprintf(wizard.out, "  心愿物品必须是 1 到 %d 个字且不能包含控制字符。\n", maxSloganRunes)
+		}
+		config.WishAmount, err = wizard.amount("目标金额", config.WishAmount, false)
+		if newWish {
+			config.WishStartDate = configDateOnly(time.Now())
+		}
+	}
+	return config, err
 }
 
 func (wizard configWizard) amount(label string, current float64, allowZero bool) (float64, error) {

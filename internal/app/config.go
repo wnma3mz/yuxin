@@ -56,6 +56,7 @@ type Config struct {
 	TargetMonthlySpend float64
 	WishName           string
 	WishAmount         float64
+	WishStartDate      time.Time
 	HideAmounts        bool
 	HideRetirementDate bool
 	balanceDateMissing bool
@@ -96,7 +97,8 @@ func defaultConfig() Config {
 		BalanceStartDate:   today,
 		AssetsEnabled:      false,
 		balanceDateMissing: true,
-		TargetMonthlySpend: 3000,
+		TargetMonthlySpend: 0,
+		WishStartDate:      today,
 	}
 }
 
@@ -319,6 +321,7 @@ func saveConfig(config Config, path string) error {
 		"target_monthly_spend = " + q(configNumber(config.TargetMonthlySpend)),
 		"wish_name = " + q(config.WishName),
 		"wish_amount = " + q(configNumber(config.WishAmount)),
+		"wish_start_date = " + q(config.WishStartDate.Format("2006-01-02")),
 		"balance_start_date = " + q(config.BalanceStartDate.Format("2006-01-02")),
 		"assets_enabled = " + strconv.FormatBool(config.AssetsEnabled),
 		"profile_enabled = " + strconv.FormatBool(config.ProfileEnabled),
@@ -395,7 +398,7 @@ func supportedConfigKey(section, key string) bool {
 	supported := map[string]bool{
 		".version": true, ".refresh_interval": true, ".slogan": true, ".retirement_years": true,
 		".retirement_start_date": true, ".progress_birth_date": true, ".reserve": true,
-		".target_monthly_spend": true, ".wish_name": true, ".wish_amount": true,
+		".target_monthly_spend": true, ".wish_name": true, ".wish_amount": true, ".wish_start_date": true,
 		".balance_start_date": true,
 		".retirement_mode":    true, ".retirement_unit": true,
 		".assets_enabled": true, ".profile_enabled": true,
@@ -466,6 +469,12 @@ func applyConfigValue(config *Config, section, key, value string) error {
 			return err
 		}
 		config.WishAmount = amount
+	case ".wish_start_date":
+		parsed, err := parseDate(value)
+		if err != nil {
+			return err
+		}
+		config.WishStartDate = parsed
 	case ".balance_start_date":
 		parsed, err := parseDate(value)
 		if err != nil {

@@ -355,7 +355,7 @@ func TestDashboardDetailsView(t *testing.T) {
 	}
 
 	details := renderDashboard(snapshot, config, 80, 24, false, true)
-	if !strings.Contains(details, "计算口径") || strings.Contains(details, "当前存款") {
+	if !strings.Contains(details, "计算口径") || !strings.Contains(details, "• 薪资：") || !strings.Contains(details, "• 今日入账：") || strings.Contains(details, "退休距离") || strings.Contains(details, "当前存款") {
 		t.Fatalf("unexpected details view:\n%s", details)
 	}
 }
@@ -397,7 +397,7 @@ func TestStandard80By24TerminalDoesNotOverflow(t *testing.T) {
 	}
 	output := renderDashboard(snapshot, config, 80, 24, false, false)
 	lines := strings.Split(output, "\n")
-	if len(lines) > 24 || !strings.Contains(output, "╭─ 未来") || !strings.Contains(output, "退休还有") || !strings.Contains(output, "实时存款余额") {
+	if len(lines) > 24 || !strings.Contains(output, "退休倒计时") || !strings.Contains(output, "距离退休") || !strings.Contains(output, "实时存款余额") {
 		t.Fatalf("80x24 layout uses %d lines:\n%s", len(lines), output)
 	}
 }
@@ -517,11 +517,11 @@ func TestFuturePanelsUseSemanticColors(t *testing.T) {
 	}
 	output := renderDashboard(snapshot, config, 110, 30, true, false)
 	for _, expected := range []string{
-		"\x1b[36m🏁 退休倒计时",
-		"\x1b[32m💰 存款",
-		"\x1b[33m" + fmt.Sprintf("%d 年", int(float64(snapshot.Retirement.RemainingDays)/averageDaysPerYear)),
-		"\x1b[32m" + displayMoney(snapshot.LiveBalance, false),
-		"\x1b[36m" + displayMoney(snapshot.DailyUntilRetirement, false),
+		"🏁 退休倒计时",
+		"💰 存款",
+		"\x1b[" + ansiAmber + "m" + fmt.Sprintf("%d 年", int(float64(snapshot.Retirement.RemainingDays)/averageDaysPerYear)),
+		"\x1b[" + ansiEmerald + "m" + displayMoney(snapshot.LiveBalance, false),
+		"\x1b[" + ansiSky + "m" + displayMoney(snapshot.DailyUntilRetirement, false),
 	} {
 		if !strings.Contains(output, expected) {
 			t.Fatalf("未来卡片缺少语义色 %q:\n%s", expected, output)
@@ -530,8 +530,11 @@ func TestFuturePanelsUseSemanticColors(t *testing.T) {
 
 	config.HideAmounts = true
 	hidden := renderDashboard(snapshot, config, 110, 30, true, false)
-	if strings.Contains(hidden, "\x1b[32m¥••••") || strings.Contains(hidden, "\x1b[36m¥••••") {
+	if strings.Contains(hidden, "\x1b["+ansiEmerald+"m¥••••") || strings.Contains(hidden, "\x1b["+ansiSky+"m¥••••") {
 		t.Fatalf("隐私占位符不应使用金额强调色:\n%s", hidden)
+	}
+	if strings.Contains(hidden, "\x1b[1;"+ansiAmber+"m¥••••") {
+		t.Fatalf("今日入账隐私占位符不应使用收入强调色:\n%s", hidden)
 	}
 }
 
@@ -558,15 +561,22 @@ func TestSavingsTargetShowsProgressAndGap(t *testing.T) {
 
 func TestWishTargetShowsProgressAndRespectsPrivacy(t *testing.T) {
 	config := testFullConfig()
+	config.AssetsEnabled = false
+	config.Assets = 0
+	config.AssetItems = nil
 	config.TargetMonthlySpend = 0
 	config.WishName = "心仪的相机"
 	config.WishAmount = 120000
+	config.WishStartDate = time.Date(2026, time.July, 16, 0, 0, 0, 0, time.Local)
 	snapshot, err := CalculateDashboard(time.Date(2026, time.July, 16, 15, 0, 0, 0, time.Local), config)
 	if err != nil {
 		t.Fatal(err)
 	}
 	output := RenderDashboard(snapshot, config, 110, false)
-	for _, expected := range []string{"心愿目标", "心仪的相机", "目标金额", "目标进度", "距离拿下还差"} {
+	if snapshot.AssetsEnabled {
+		t.Fatal("wish target unexpectedly depends on savings")
+	}
+	for _, expected := range []string{"心愿目标", "心仪的相机", "目标金额", "工资已攒到", "目标进度", "距离拿下还差"} {
 		if !strings.Contains(output, expected) {
 			t.Fatalf("wish target missing %q:\n%s", expected, output)
 		}

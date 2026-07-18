@@ -36,8 +36,8 @@ func TestLoadRepositoryConfig(t *testing.T) {
 	if len(config.Workdays) != 5 || !config.Workdays[time.Monday] || !config.Workdays[time.Friday] {
 		t.Errorf("Workdays = %#v, want Monday through Friday", config.Workdays)
 	}
-	if config.AssetsEnabled || config.Assets != 0 || config.Reserve != 0 || config.TargetMonthlySpend != 3000 || config.WishName != "" || config.WishAmount != 0 {
-		t.Errorf("asset defaults = enabled %t, assets %.2f, reserve %.2f, target %.2f; want disabled with target 3000", config.AssetsEnabled, config.Assets, config.Reserve, config.TargetMonthlySpend)
+	if config.AssetsEnabled || config.Assets != 0 || config.Reserve != 0 || config.TargetMonthlySpend != 0 || config.WishName != "" || config.WishAmount != 0 {
+		t.Errorf("asset defaults = enabled %t, assets %.2f, reserve %.2f, target %.2f; want disabled", config.AssetsEnabled, config.Assets, config.Reserve, config.TargetMonthlySpend)
 	}
 	if got := config.BalanceStartDate.Format("2006-01-02"); got != "2026-07-17" {
 		t.Errorf("BalanceStartDate = %s, want 2026-07-17", got)
@@ -328,6 +328,7 @@ func TestWishTargetConfigRoundTrip(t *testing.T) {
 	config.TargetMonthlySpend = 0
 	config.WishName = "心仪的相机"
 	config.WishAmount = 12000
+	config.WishStartDate = mustDate("2026-07-10")
 	if err := saveConfig(config, path); err != nil {
 		t.Fatal(err)
 	}
@@ -335,7 +336,7 @@ func TestWishTargetConfigRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if loaded.WishName != config.WishName || loaded.WishAmount != config.WishAmount || loaded.TargetMonthlySpend != 0 {
+	if loaded.WishName != config.WishName || loaded.WishAmount != config.WishAmount || loaded.WishStartDate.Format("2006-01-02") != "2026-07-10" || loaded.TargetMonthlySpend != 0 {
 		t.Fatalf("wish target round trip = %#v", loaded)
 	}
 }
@@ -422,8 +423,14 @@ func TestValidateConfigRejectsInvalidFields(t *testing.T) {
 			config.WishAmount = 1000
 		},
 		"multiple savings targets": func(config *Config) {
+			config.TargetMonthlySpend = 3000
 			config.WishName = "相机"
 			config.WishAmount = 1000
+		},
+		"future wish start": func(config *Config) {
+			config.WishName = "相机"
+			config.WishAmount = 1000
+			config.WishStartDate = configDateOnly(time.Now()).AddDate(0, 0, 1)
 		},
 		"negative account": func(config *Config) {
 			config.AssetItems = []AssetItem{{Balance: -1}}

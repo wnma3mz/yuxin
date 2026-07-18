@@ -86,8 +86,8 @@ func run(path string) error {
 	}
 
 	var shareScene strings.Builder
-	shareScene.WriteString("\x1b[?7l\x1b[2J\x1b[H\x1b[1;97m" + centeredText("一键生成可分享画面") + "\x1b[0m\n")
-	shareScene.WriteString("\x1b[90m" + centeredText("固定合成数据，不暴露工资、存款或退休信息") + "\x1b[0m\n\n")
+	shareScene.WriteString("\x1b[?7l\x1b[2J\x1b[H\x1b[1;38;5;254m" + centeredText("一键生成可分享画面") + "\x1b[0m\n")
+	shareScene.WriteString("\x1b[38;5;245m" + centeredText("固定合成数据，不暴露工资、存款或退休信息") + "\x1b[0m\n\n")
 	indent := strings.Repeat(" ", (demoColumns-62)/2)
 	for _, line := range strings.Split(share, "\n") {
 		shareScene.WriteString(indent + line + "\n")

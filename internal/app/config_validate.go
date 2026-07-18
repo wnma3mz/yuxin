@@ -85,6 +85,9 @@ func validateConfigAt(config Config, now time.Time) error {
 	if config.TargetMonthlySpend > 0 && config.WishAmount > 0 {
 		return fmt.Errorf("躺平目标和心愿目标只能开启一个")
 	}
+	if config.WishAmount > 0 && (config.WishStartDate.IsZero() || configDateOnly(config.WishStartDate).After(today)) {
+		return fmt.Errorf("心愿起算日不能为空或晚于今天")
+	}
 	if config.Assets < 0 || config.Assets > maxMoneyAmount {
 		return fmt.Errorf("资产余额必须在 0 到 %s 之间", configNumber(maxMoneyAmount))
 	}

@@ -15,7 +15,7 @@ func TestConfigWizardEditsRefreshInterval(t *testing.T) {
 	config := testFullConfig()
 	path := filepath.Join(t.TempDir(), "config.toml")
 	var output bytes.Buffer
-	updated, err := configureConfig(strings.NewReader("5\n1\ninvalid\n0.5\n0\n"), &output, path, config)
+	updated, err := configureConfig(strings.NewReader("6\n1\ninvalid\n0.5\n0\n"), &output, path, config)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -28,7 +28,7 @@ func TestConfigWizardEditsSlogan(t *testing.T) {
 	config := testFullConfig()
 	path := filepath.Join(t.TempDir(), "config.toml")
 	var output bytes.Buffer
-	updated, err := configureConfig(strings.NewReader("5\n2\n今日有数，下班有期。\n0\n"), &output, path, config)
+	updated, err := configureConfig(strings.NewReader("6\n2\n今日有数，下班有期。\n0\n"), &output, path, config)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,13 +58,16 @@ func TestConfigWizardSetsSingleDeposit(t *testing.T) {
 	config := testFullConfig()
 	path := filepath.Join(t.TempDir(), "config.toml")
 	var output bytes.Buffer
-	input := "4\n3w\n0\n0\n"
+	input := "4\n3w\n0\n"
 	updated, err := configureConfig(strings.NewReader(input), &output, path, config)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if updated.Assets != 30000 || len(updated.AssetItems) != 1 || updated.AssetItems[0].Name != "存款" || updated.AssetItems[0].Kind != "deposit" {
 		t.Fatalf("deposit = %.2f, items = %#v", updated.Assets, updated.AssetItems)
+	}
+	if strings.Contains(output.String(), "目标计划：") {
+		t.Fatalf("deposit editor unexpectedly prompted for a goal: %q", output.String())
 	}
 }
 
@@ -146,7 +149,7 @@ func TestConfigWizardAcceptsCompactAssetAmount(t *testing.T) {
 	config := testFullConfig()
 	path := filepath.Join(t.TempDir(), "config.toml")
 	var output bytes.Buffer
-	updated, err := configureConfig(strings.NewReader("4\n200k\n0\n0\n"), &output, path, config)
+	updated, err := configureConfig(strings.NewReader("4\n200k\n0\n"), &output, path, config)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -164,7 +167,7 @@ func TestEditingDepositCollapsesLegacyAccounts(t *testing.T) {
 	config.Assets = 400000
 	path := filepath.Join(t.TempDir(), "config.toml")
 	var output bytes.Buffer
-	updated, err := configureConfig(strings.NewReader("4\n20w\n0\n0\n"), &output, path, config)
+	updated, err := configureConfig(strings.NewReader("4\n20w\n0\n"), &output, path, config)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -229,7 +232,7 @@ func TestConfigWizardSetsMonthlySavingsTarget(t *testing.T) {
 	config := testFullConfig()
 	path := filepath.Join(t.TempDir(), "config.toml")
 	var output bytes.Buffer
-	updated, err := configureConfig(strings.NewReader("4\n10w\n1\n3000\n0\n"), &output, path, config)
+	updated, err := configureConfig(strings.NewReader("5\n1\n3000\n0\n"), &output, path, config)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -243,17 +246,63 @@ func TestConfigWizardSetsMonthlySavingsTarget(t *testing.T) {
 
 func TestConfigWizardSetsWishTarget(t *testing.T) {
 	config := testFullConfig()
+	config.AssetsEnabled = false
+	config.Assets = 0
+	config.AssetItems = nil
 	path := filepath.Join(t.TempDir(), "config.toml")
 	var output bytes.Buffer
-	updated, err := configureConfig(strings.NewReader("4\n10w\n2\n心仪的相机\n12000\n0\n"), &output, path, config)
+	updated, err := configureConfig(strings.NewReader("5\n2\n心仪的相机\n12000\n0\n"), &output, path, config)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if updated.Assets != 100000 || updated.TargetMonthlySpend != 0 || updated.WishName != "心仪的相机" || updated.WishAmount != 12000 {
+	if updated.AssetsEnabled || updated.Assets != 0 || updated.TargetMonthlySpend != 0 || updated.WishName != "心仪的相机" || updated.WishAmount != 12000 {
 		t.Fatalf("wish target = %#v", updated)
 	}
 	if !strings.Contains(output.String(), "心愿物品") || !strings.Contains(output.String(), "目标金额") {
 		t.Fatalf("wish prompts missing: %q", output.String())
+	}
+}
+
+func TestLayFlatGoalRequiresSavings(t *testing.T) {
+	config := defaultConfig()
+	path := filepath.Join(t.TempDir(), "config.toml")
+	var output bytes.Buffer
+	updated, err := configureConfig(strings.NewReader("5\n1\n0\n"), &output, path, config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.TargetMonthlySpend != 0 || !strings.Contains(output.String(), "需要先开启存款和退休倒计时") {
+		t.Fatalf("lay-flat goal should remain disabled: %#v, %q", updated, output.String())
+	}
+}
+
+func TestClosingRetirementClearsLayFlatGoal(t *testing.T) {
+	config := testFullConfig()
+	config.TargetMonthlySpend = 3000
+	path := filepath.Join(t.TempDir(), "config.toml")
+	var output bytes.Buffer
+	updated, err := configureConfig(strings.NewReader("3\n0\n0\n"), &output, path, config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.ProfileEnabled || updated.TargetMonthlySpend != 0 {
+		t.Fatalf("closing retirement retained lay-flat goal: %#v", updated)
+	}
+}
+
+func TestClosingSavingsKeepsIndependentWishGoal(t *testing.T) {
+	config := testFullConfig()
+	config.WishName = "心仪的相机"
+	config.WishAmount = 12000
+	config.WishStartDate = mustDate("2026-07-10")
+	path := filepath.Join(t.TempDir(), "config.toml")
+	var output bytes.Buffer
+	updated, err := configureConfig(strings.NewReader("4\n0\n0\n"), &output, path, config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.AssetsEnabled || updated.WishName != config.WishName || updated.WishAmount != config.WishAmount || !updated.WishStartDate.Equal(config.WishStartDate) {
+		t.Fatalf("closing savings changed wish goal: %#v", updated)
 	}
 }
 
@@ -381,7 +430,7 @@ func TestConfigWizardDoesNotSaveNoOpEdit(t *testing.T) {
 	config.BalanceStartDate = mustDate("2026-01-01")
 	path := filepath.Join(t.TempDir(), "config.toml")
 	var output bytes.Buffer
-	updated, err := configureConfig(strings.NewReader("4\n\n\n\n0\n"), &output, path, config)
+	updated, err := configureConfig(strings.NewReader("4\n\n0\n"), &output, path, config)
 	if err != nil {
 		t.Fatal(err)
 	}

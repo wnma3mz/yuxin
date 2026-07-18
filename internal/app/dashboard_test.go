@@ -258,23 +258,29 @@ func TestDashboardCalculatesSavingsTargetToRetirement(t *testing.T) {
 	}
 }
 
-func TestDashboardCalculatesWishTargetFromLiveBalance(t *testing.T) {
+func TestDashboardCalculatesWishTargetFromRealtimeSalary(t *testing.T) {
 	config := testFullConfig()
+	config.AssetsEnabled = false
+	config.Assets = 0
+	config.AssetItems = nil
 	config.TargetMonthlySpend = 0
 	config.WishName = "心仪的相机"
 	config.WishAmount = 120000
-	config.Assets = 100000
-	config.AssetItems = []AssetItem{{Name: "存款", Kind: "deposit", Balance: 100000}}
-	result, err := CalculateDashboard(testDate("2026-07-16 00:00:00"), config)
+	config.WishStartDate = testDate("2026-07-16 00:00:00")
+	result, err := CalculateDashboard(testDate("2026-07-16 11:00:00"), config)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.WishTarget != 120000 || result.WishGap != 20000 || math.Abs(result.WishProgress-5.0/6.0) > 1e-9 {
-		t.Fatalf("wish target = target %.2f, gap %.2f, progress %.4f", result.WishTarget, result.WishGap, result.WishProgress)
+	if result.AssetsEnabled || result.WishTarget != 120000 || result.WishEarned != result.Salary.EarnedToday || math.Abs(result.WishGap-(120000-result.WishEarned)) > 1e-9 {
+		t.Fatalf("wish target = target %.2f, earned %.2f, gap %.2f, salary %+v", result.WishTarget, result.WishEarned, result.WishGap, result.Salary)
+	}
+	afterOneSecond, err := CalculateDashboard(testDate("2026-07-16 11:00:01"), config)
+	if err != nil || math.Abs(afterOneSecond.WishEarned-result.WishEarned-result.Salary.HourlyRate/3600) > 1e-9 {
+		t.Fatalf("wish did not advance with realtime salary: before %.6f, after %.6f, error %v", result.WishEarned, afterOneSecond.WishEarned, err)
 	}
 
-	config.Assets = 120001
-	result, err = CalculateDashboard(testDate("2026-07-16 00:00:00"), config)
+	config.WishAmount = 50
+	result, err = CalculateDashboard(testDate("2026-07-16 11:00:00"), config)
 	if err != nil || result.WishGap != 0 || result.WishProgress != 1 {
 		t.Fatalf("completed wish target = %+v, %v", result, err)
 	}

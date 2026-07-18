@@ -11,6 +11,16 @@ import (
 
 var ansiPattern = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 
+// Accent colors use restrained 256-color values for broad terminal support.
+// Body text and borders intentionally inherit the terminal foreground color,
+// which keeps them readable on both dark and light user themes.
+const (
+	ansiAmber       = "38;5;214"
+	ansiEmerald     = "38;5;36"
+	ansiEmeraldSoft = "38;5;29"
+	ansiSky         = "38;5;74"
+)
+
 func panel(title string, rows []string, width int) []string {
 	titleText := " " + title + " "
 	top := "╭─" + titleText + strings.Repeat("─", max(0, width-3-displayWidth(titleText))) + "╮"
@@ -70,9 +80,13 @@ func threeColumns(left, center, right string, width int) string {
 }
 
 func progressBar(progress float64, width int, useColor bool) string {
+	return progressBarWithColor(progress, width, useColor, ansiSky)
+}
+
+func progressBarWithColor(progress float64, width int, useColor bool, filledColor string) string {
 	filled := int(math.Round(clampFloat(progress, 0, 1) * float64(width)))
-	return color(strings.Repeat("█", filled), "32", useColor) +
-		color(strings.Repeat("░", width-filled), "90", useColor)
+	return color(strings.Repeat("█", filled), filledColor, useColor) +
+		strings.Repeat("░", width-filled)
 }
 
 func money(value float64) string {

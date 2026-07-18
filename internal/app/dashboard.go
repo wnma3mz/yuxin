@@ -36,6 +36,7 @@ type DashboardSnapshot struct {
 	SavingsGap           float64
 	SavingsProgress      float64
 	WishTarget           float64
+	WishEarned           float64
 	WishGap              float64
 	WishProgress         float64
 	RemainingWorkdays    int
@@ -259,6 +260,7 @@ func CalculateDashboard(now time.Time, config Config) (DashboardSnapshot, error)
 	savingsGap := 0.0
 	savingsProgress := 0.0
 	wishTarget := 0.0
+	wishEarned := 0.0
 	wishGap := 0.0
 	wishProgress := 0.0
 	covers := 0.0
@@ -280,10 +282,12 @@ func CalculateDashboard(now time.Time, config Config) (DashboardSnapshot, error)
 			}
 		}
 	}
-	if config.AssetsEnabled && config.WishAmount > 0 {
+	if config.WishAmount > 0 {
 		wishTarget = config.WishAmount
-		wishGap = math.Max(0, wishTarget-spendable)
-		wishProgress = math.Max(0, math.Min(1, spendable/wishTarget))
+		completedWishWorkdays := CountConfiguredWorkdays(config.WishStartDate, normalizedDate(now), config)
+		wishEarned = dailyRate(config, effectiveWorkSeconds(config))*float64(completedWishWorkdays) + salary.EarnedToday
+		wishGap = math.Max(0, wishTarget-wishEarned)
+		wishProgress = math.Max(0, math.Min(1, wishEarned/wishTarget))
 	}
 	return DashboardSnapshot{
 		Now: now, Salary: salary, Retirement: retirement,
@@ -291,7 +295,7 @@ func CalculateDashboard(now time.Time, config Config) (DashboardSnapshot, error)
 		TotalAssets: totalAssets, LiveBalance: liveBalance, SpendableAssets: spendable,
 		DailyUntilRetirement: dailyBudget, RemainingWorkdays: remainingWorkdays,
 		SavingsTarget: savingsTarget, SavingsGap: savingsGap, SavingsProgress: savingsProgress,
-		WishTarget: wishTarget, WishGap: wishGap, WishProgress: wishProgress,
+		WishTarget: wishTarget, WishEarned: wishEarned, WishGap: wishGap, WishProgress: wishProgress,
 		RemainingSalary: remainingSalary, TodayCoversDays: covers,
 		Holiday: holiday, HolidayDataAvailable: calendar != nil,
 	}, nil
