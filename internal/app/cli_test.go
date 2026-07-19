@@ -46,17 +46,16 @@ func TestUninstallIsAFirstClassCommand(t *testing.T) {
 }
 
 func TestShareAndConfigTransferArguments(t *testing.T) {
-	opts, err := parseArgs([]string{"share", "--real", "--card", "workday"})
-	if err != nil || opts.command != "share" || !opts.shareReal || opts.shareCard != "workday" {
+	opts, err := parseArgs([]string{"share"})
+	if err != nil || opts.command != "share" {
 		t.Fatalf("parseArgs(share) = %+v, %v", opts, err)
 	}
-	opts, err = parseArgs([]string{"share", "--anonymous"})
-	if err != nil || !opts.shareAnonymous {
-		t.Fatalf("parseArgs(share --anonymous) = %+v, %v", opts, err)
+	if _, err = parseArgs([]string{"share", "--anonymous"}); err != nil {
+		t.Fatalf("legacy share --anonymous should remain compatible: %v", err)
 	}
-	for _, args := range [][]string{{"share", "--anonymous", "--real"}, {"share", "--anonymous", "--card", "overview"}} {
+	for _, args := range [][]string{{"share", "--real"}, {"share", "--card", "overview"}} {
 		if _, err := parseArgs(args); err == nil {
-			t.Errorf("parseArgs(%q) accepted conflicting share options", args)
+			t.Errorf("parseArgs(%q) accepted removed share-card options", args)
 		}
 	}
 	opts, err = parseArgs([]string{"config", "export", "backup.toml"})
@@ -67,7 +66,7 @@ func TestShareAndConfigTransferArguments(t *testing.T) {
 	if err != nil || opts.actionPath != "update" {
 		t.Fatalf("reserved-word export path = %+v, %v", opts, err)
 	}
-	for _, args := range [][]string{{"config", "export"}, {"config", "import"}, {"share", "--card"}} {
+	for _, args := range [][]string{{"config", "export"}, {"config", "import"}} {
 		if _, err := parseArgs(args); err == nil {
 			t.Errorf("parseArgs(%q) unexpectedly succeeded", args)
 		}
@@ -193,25 +192,6 @@ func TestDoctorStrictReportsMissingHolidayData(t *testing.T) {
 	}
 }
 
-func TestRunShareDefaultsToSyntheticData(t *testing.T) {
-	code, output, stderr := runForTest(t, []string{"share", "--config", "data/default-config.toml"}, "")
-	if code != 0 || stderr != "" || !strings.Contains(output, "演示数据") || !strings.Contains(output, "离线本地运行") {
-		t.Fatalf("share = code %d, output %q, stderr %q", code, output, stderr)
-	}
-	invalid := filepath.Join(t.TempDir(), "invalid.toml")
-	if err := os.WriteFile(invalid, []byte("not valid toml"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	code, output, stderr = runForTest(t, []string{"share", "--config", invalid}, "")
-	if code != 0 || stderr != "" || !strings.Contains(output, "演示数据") {
-		t.Fatalf("synthetic share with invalid config = code %d, output %q, stderr %q", code, output, stderr)
-	}
-	code, output, stderr = runForTest(t, []string{"share", "--real", "--card=workday", "--config", "data/default-config.toml"}, "")
-	if code != 0 || !strings.Contains(output, "本地数据") || !strings.Contains(stderr, "隐私提示") {
-		t.Fatalf("real share = code %d, output %q, stderr %q", code, output, stderr)
-	}
-}
-
 func TestRunConfigExportImportAndClear(t *testing.T) {
 	directory := t.TempDir()
 	configPath := filepath.Join(directory, "config.toml")
@@ -273,7 +253,6 @@ func TestRunReportsDataCommandErrors(t *testing.T) {
 		{[]string{"config", "import", filepath.Join(directory, "missing.toml"), "--config", filepath.Join(directory, "target.toml")}, "", "导入失败"},
 		{[]string{"config", "clear", "--config", directory}, "DELETE\n", "清理失败"},
 		{[]string{"config", "export", directory, "--config", "data/default-config.toml"}, "", "导出失败"},
-		{[]string{"share", "--card", "unknown", "--config", "data/default-config.toml"}, "", "生成分享卡片失败"},
 		{[]string{"once", "--config", invalidConfig}, "", "读取配置"},
 	}
 	for _, test := range tests {

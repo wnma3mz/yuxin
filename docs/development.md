@@ -50,15 +50,19 @@ brew install ffmpeg-full
 
 ```bash
 scripts/render-promo.sh docs/assets/yuxin-promo.mp4
+
+# 生成抖音与 TikTok 共用的中文版竖屏宣传片
+scripts/render-social-cn.sh docs/assets/yuxin-social-cn.mp4
 ```
 
-脚本默认混入仓库内的 `docs/assets/yuxin-promo-voice.m4a`。可通过以下环境变量调整：
+两个脚本默认混入仓库内的 `docs/assets/yuxin-promo-voice.m4a`。可通过以下环境变量调整：
 
-- `YUXIN_PROMO_SILENT=1`：生成无声版。
-- `YUXIN_PROMO_VOICE_TRACK=/path/to/voice.m4a`：替换配音音轨。
+- `YUXIN_PROMO_SILENT=1`：生成无声横版。
+- `YUXIN_PROMO_VOICE_TRACK=/path/to/voice.m4a`：替换横版配音音轨。
+- `YUXIN_SOCIAL_VOICE_TRACK=/path/to/voice.m4a`：替换竖屏配音音轨。
 - `YUXIN_FFMPEG=/path/to/ffmpeg`：指定 FFmpeg 可执行文件。
 
-画面设计、分镜和配音稿分别见[终端设计说明](terminal-ui.md)、[演示与宣传视频计划](demo-video-plan.md)和[宣传片配音文案](promo-voiceover.md)。
+演示分镜、画面和配音稿统一见[演示与宣传视频计划](demo-video-plan.md)。
 
 ## 发布版本
 
@@ -85,7 +89,6 @@ Release 成功后，工作流会使用两个 macOS ZIP 的 SHA-256 自动更新 
 ## 相关文档
 
 - [配置与产品决策](config-review.md)
-- [终端设计说明](terminal-ui.md)
 - [演示与宣传视频计划](demo-video-plan.md)
 - [产品与发布路线](roadmap.md)
 - [Homebrew 发布配置](homebrew.md)

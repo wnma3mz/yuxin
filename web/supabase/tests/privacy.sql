@@ -10,7 +10,7 @@ begin
     or has_table_privilege('anon', 'private.public_messages', 'select') then
     raise exception 'anon unexpectedly has direct raw table privileges';
   end if;
-  if not has_function_privilege('anon', 'public.submit_public_data(integer,integer,integer,bigint,integer)', 'execute') then
+  if not has_function_privilege('anon', 'public.submit_public_data(integer,integer,integer,bigint,integer,text)', 'execute') then
     raise exception 'anon cannot call submit_public_data';
   end if;
   if not has_function_privilege('anon', 'public.submit_public_message(text,text)', 'execute') then
@@ -46,6 +46,24 @@ select public.submit_public_data(
   30
 );
 
+select public.submit_public_data(
+  8100,
+  480,
+  5,
+  12000,
+  30,
+  repeat('a', 64)
+);
+
+select public.submit_public_data(
+  12600,
+  420,
+  4,
+  null,
+  24,
+  repeat('a', 64)
+);
+
 select public.submit_public_message(
   'encourage',
   '今天也辛苦了'
@@ -58,9 +76,11 @@ reset role;
 do $$
 declare
   contribution private.public_contributions%rowtype;
+  editable_count integer;
 begin
   select * into contribution
   from private.public_contributions
+  where edit_credential_hash is null
   order by id desc
   limit 1;
 
@@ -68,6 +88,24 @@ begin
     or contribution.daily_work_minutes <> 480
     or contribution.savings_cny <> 12000 then
     raise exception 'server-side precision reduction failed: %', row_to_json(contribution);
+  end if;
+
+  select count(*) into editable_count
+  from private.public_contributions
+  where edit_credential_hash is not null;
+  if editable_count <> 1 then
+    raise exception 'correction credential created duplicate contributions: %', editable_count;
+  end if;
+  select * into contribution
+  from private.public_contributions
+  where edit_credential_hash is not null;
+  if contribution.monthly_salary_cny <> 12600
+    or contribution.daily_work_minutes <> 420
+    or contribution.workdays_per_week <> 4
+    or contribution.savings_cny is not null
+    or contribution.retirement_years_remaining <> 24
+    or octet_length(contribution.edit_credential_hash) <> 32 then
+    raise exception 'credential correction failed: %', row_to_json(contribution);
   end if;
 
   if exists (

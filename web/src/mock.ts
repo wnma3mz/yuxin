@@ -92,6 +92,7 @@ export function shouldShowDemoData(mode: "mock" | "supabase" | "unconfigured", p
 }
 
 export function createMockDataClient() {
+  const credentials = new Set<string>();
   return {
     configured: true,
     mode: "mock" as const,
@@ -101,9 +102,11 @@ export function createMockDataClient() {
     async loadMessages(limit = 9): Promise<PublicMessage[]> {
       return getDemoMessages(limit);
     },
-    async submit(_input: ContributionInput): Promise<{ messageAccepted: boolean | null }> {
+    async submit(_input: ContributionInput, editCredential: string | null) {
       await new Promise((resolve) => window.setTimeout(resolve, 450));
-      return { messageAccepted: _input.messageText === null ? null : true };
+      const updated = editCredential !== null && credentials.has(editCredential);
+      if (editCredential !== null) credentials.add(editCredential);
+      return { updated, messageAccepted: _input.messageText === null ? null : true };
     },
   };
 }

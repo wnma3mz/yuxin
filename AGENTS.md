@@ -9,8 +9,8 @@ Read the relevant documentation before changing an established workflow:
 - User-facing installation, commands, and behavior: `README.md`
 - Build, demo rendering, and releases: `docs/development.md`
 - Configuration behavior and product decisions: `docs/config-review.md`
-- Terminal layout and copy: `docs/terminal-ui.md`
-- Demo and promotional media: `docs/demo-video-plan.md` and `docs/promo-voiceover.md`
+- Terminal layout, copy, and configuration behavior: `README.md` and `docs/config-review.md`
+- Demo and promotional media: `docs/demo-video-plan.md`
 - Homebrew publishing: `docs/homebrew.md`
 - Current implementation status and version history: `docs/roadmap.md` and `CHANGELOG.md`
 

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { parseDashboardData, parsePublicMessages, submitPublicContribution } from "../src/api";
+import { deriveEditCredentialVerifier, parseDashboardData, parsePublicMessages, submitPublicContribution } from "../src/api";
 
 function dashboard() {
   return {
@@ -57,6 +57,9 @@ describe("public API response validation", () => {
     const requests: Array<{ url: string; body: Record<string, unknown> }> = [];
     vi.stubGlobal("fetch", vi.fn(async (url: string, options: RequestInit) => {
       requests.push({ url, body: JSON.parse(String(options.body)) as Record<string, unknown> });
+      if (url.endsWith("/submit_public_data")) {
+        return new Response("false", { status: 200, headers: { "content-type": "application/json" } });
+      }
       return new Response(null, { status: 204 });
     }));
 
@@ -68,14 +71,17 @@ describe("public API response validation", () => {
       retirementYearsRemaining: 30,
       messageKind: "wish",
       messageText: "希望准点下班",
-    });
+    }, "A".repeat(43));
 
+    expect(result.updated).toBe(false);
     expect(result.messageAccepted).toBe(true);
     expect(requests.map((request) => request.url)).toEqual([
       "https://project.supabase.co/rest/v1/rpc/submit_public_data",
       "https://project.supabase.co/rest/v1/rpc/submit_public_message",
     ]);
     expect(requests[0]?.body).not.toHaveProperty("p_message_text");
+    expect(requests[0]?.body.p_edit_credential_hash).toMatch(/^[0-9a-f]{64}$/u);
+    expect(requests[0]?.body.p_edit_credential_hash).not.toBe("A".repeat(43));
     expect(requests[1]?.body).toEqual({ p_message_kind: "wish", p_message_text: "希望准点下班" });
   });
 
@@ -98,7 +104,7 @@ describe("public API response validation", () => {
       messageText: "今天又开了没有结论的会",
     });
 
-    expect(result).toEqual({ messageAccepted: false });
+    expect(result).toEqual({ updated: false, messageAccepted: false });
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
@@ -119,5 +125,33 @@ describe("public API response validation", () => {
       messageText: "希望准点下班",
     })).rejects.toThrow("rejected");
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports when the browser credential updated an existing sample", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("true", {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    })));
+
+    const result = await submitPublicContribution({ url: "https://project.supabase.co", key: "public" }, {
+      monthlySalaryCny: 12600,
+      dailyWorkMinutes: 420,
+      workdaysPerWeek: 4,
+      savingsCny: null,
+      retirementYearsRemaining: 24,
+      messageKind: null,
+      messageText: null,
+    }, "A".repeat(43));
+
+    expect(result).toEqual({ updated: true, messageAccepted: null });
+  });
+
+  it("derives a stable verifier without exposing the browser credential", async () => {
+    const credential = "A".repeat(43);
+    const first = await deriveEditCredentialVerifier(credential);
+    expect(first).toMatch(/^[0-9a-f]{64}$/u);
+    expect(first).toBe(await deriveEditCredentialVerifier(credential));
+    expect(first).not.toContain(credential);
+    expect(await deriveEditCredentialVerifier(null)).toBeNull();
   });
 });

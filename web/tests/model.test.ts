@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { characterBar, contributionInterval, formatMoney, formatWorkMinutes, layFlatBudget, salaryPulseAt, sampleLabel, spendingMood, type HolidayCalendarData } from "../src/model";
+import { characterBar, contributionInterval, formatMoney, formatWorkMinutes, layFlatBudget, sampleLabel, spendingMood } from "../src/model";
 
 describe("dashboard formatting", () => {
   it("formats monetary medians as whole yuan", () => {
@@ -40,26 +40,4 @@ describe("dashboard formatting", () => {
     expect(spendingMood(220)).toBe("恭喜，退休生活开始体面");
   });
 
-  it("calculates the salary pulse from local time without resetting on refresh", () => {
-    const calendar: HolidayCalendarData = {
-      year: 2026,
-      periods: [{ name: "国庆节", start: "2026-10-01", end: "2026-10-07" }],
-      workdays: ["2026-10-10"],
-    };
-    expect(salaryPulseAt(60, 480, new Date(2026, 6, 20, 8, 30), calendar)).toMatchObject({ earnedCny: 0, phase: "before" });
-    expect(salaryPulseAt(60, 480, new Date(2026, 6, 20, 10, 30), calendar)).toMatchObject({ earnedCny: 90, phase: "working" });
-    expect(salaryPulseAt(60, 480, new Date(2026, 6, 20, 12, 30), calendar)).toMatchObject({ earnedCny: 180, phase: "lunch" });
-    expect(salaryPulseAt(60, 480, new Date(2026, 6, 20, 18, 30), calendar)).toMatchObject({ earnedCny: 480, phase: "after" });
-  });
-
-  it("pauses on weekends and holidays but honors makeup workdays", () => {
-    const calendar: HolidayCalendarData = {
-      year: 2026,
-      periods: [{ name: "国庆节", start: "2026-10-01", end: "2026-10-07" }],
-      workdays: ["2026-10-10"],
-    };
-    expect(salaryPulseAt(60, 480, new Date(2026, 9, 1, 10, 0), calendar)).toMatchObject({ earnedCny: 0, phase: "rest", restLabel: "国庆节" });
-    expect(salaryPulseAt(60, 480, new Date(2026, 6, 18, 10, 0), calendar)).toMatchObject({ earnedCny: 0, phase: "rest", restLabel: "周末" });
-    expect(salaryPulseAt(60, 480, new Date(2026, 9, 10, 10, 0), calendar)).toMatchObject({ earnedCny: 60, phase: "working" });
-  });
 });

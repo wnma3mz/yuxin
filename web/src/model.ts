@@ -64,16 +64,6 @@ export interface HolidayCalendarData {
   workdays: string[];
 }
 
-export type SalaryPulsePhase = "missing" | "rest" | "before" | "working" | "lunch" | "after";
-
-export interface SalaryPulse {
-  earnedCny: number | null;
-  phase: SalaryPulsePhase;
-  startMinutes: number;
-  endMinutes: number;
-  restLabel: string | null;
-}
-
 export type DistributionMetric = "salary" | "workHours" | "savings" | "retirement";
 
 export const messageKindLabels: Record<MessageKind, string> = {
@@ -100,49 +90,6 @@ export function formatWorkMinutes(value: number | null): string {
 
 export function sampleLabel(count: number): string {
   return count > 0 ? `${count.toLocaleString("zh-CN")} 份有效样本` : "暂无样本";
-}
-
-function localDateKey(date: Date): string {
-  return `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, "0")}-${date.getDate().toString().padStart(2, "0")}`;
-}
-
-export function salaryPulseAt(hourlyCny: number | null, dailyWorkMinutes: number | null, now: Date, calendar: HolidayCalendarData | null): SalaryPulse {
-  const startMinutes = 9 * 60;
-  const lunchStartMinutes = 12 * 60;
-  const lunchEndMinutes = 13 * 60;
-  const morningCapacity = lunchStartMinutes - startMinutes;
-  const safeDailyMinutes = dailyWorkMinutes ?? 0;
-  const endMinutes = safeDailyMinutes <= morningCapacity
-    ? startMinutes + safeDailyMinutes
-    : lunchEndMinutes + safeDailyMinutes - morningCapacity;
-  if (hourlyCny === null || dailyWorkMinutes === null) {
-    return { earnedCny: null, phase: "missing", startMinutes, endMinutes, restLabel: null };
-  }
-
-  const dateKey = localDateKey(now);
-  const calendarMatches = calendar?.year === now.getFullYear();
-  const makeupWorkday = calendarMatches && calendar.workdays.includes(dateKey);
-  const holiday = calendarMatches ? calendar.periods.find((period) => dateKey >= period.start && dateKey <= period.end) : undefined;
-  const weekend = now.getDay() === 0 || now.getDay() === 6;
-  if (!makeupWorkday && (holiday || weekend)) {
-    return { earnedCny: 0, phase: "rest", startMinutes, endMinutes, restLabel: holiday?.name ?? "周末" };
-  }
-
-  const currentMinutes = now.getHours() * 60 + now.getMinutes() + now.getSeconds() / 60;
-  let earnedMinutes = 0;
-  if (currentMinutes > startMinutes) earnedMinutes = Math.min(dailyWorkMinutes, currentMinutes - startMinutes);
-  if (currentMinutes > lunchStartMinutes && dailyWorkMinutes > morningCapacity) earnedMinutes = morningCapacity;
-  if (currentMinutes > lunchEndMinutes && dailyWorkMinutes > morningCapacity) {
-    earnedMinutes = Math.min(dailyWorkMinutes, morningCapacity + currentMinutes - lunchEndMinutes);
-  }
-  const phase: SalaryPulsePhase = currentMinutes < startMinutes
-    ? "before"
-    : currentMinutes >= endMinutes
-      ? "after"
-      : currentMinutes >= lunchStartMinutes && currentMinutes < lunchEndMinutes && dailyWorkMinutes > morningCapacity
-        ? "lunch"
-        : "working";
-  return { earnedCny: hourlyCny * earnedMinutes / 60, phase, startMinutes, endMinutes, restLabel: null };
 }
 
 export interface LayFlatBudget {

@@ -115,7 +115,10 @@ func isLoopbackHost(host string) bool {
 }
 
 func collectAnonymousContribution(input io.Reader, output io.Writer, config Config, now time.Time) (anonymousContribution, bool, error) {
-	reader := bufio.NewReader(input)
+	reader, ok := input.(*bufio.Reader)
+	if !ok {
+		reader = bufio.NewReader(input)
+	}
 	preview := &anonymousPreviewWriter{writer: output}
 	output = preview
 	payload := baseAnonymousContribution(config)
@@ -149,15 +152,20 @@ func collectAnonymousContribution(input io.Reader, output io.Writer, config Conf
 			payload.SavingsCNY = &value
 		}
 	}
-	if config.ProfileEnabled {
+	if config.ProfileEnabled || config.RetirementYears > 0 {
 		include, err := readYesNo(reader, output, "是否包含距离退休年数？[y/N]: ")
 		if err != nil {
 			return payload, false, err
 		}
 		if include {
-			retirement, err := CalculateRetirement(config, now)
-			if err != nil {
-				return payload, false, err
+			var retirement RetirementSnapshot
+			if config.ProfileEnabled {
+				retirement, err = CalculateRetirement(config, now)
+				if err != nil {
+					return payload, false, err
+				}
+			} else {
+				retirement = CalculateDefaultRetirement(config, now)
 			}
 			years := int(float64(retirement.RemainingDays) / averageDaysPerYear)
 			payload.RetirementYearsRemaining = &years

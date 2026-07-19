@@ -315,3 +315,21 @@ func TestDefaultRetirementUsesConfiguredProgressStart(t *testing.T) {
 		t.Fatalf("expected age-18 retirement progress, got %v", result.Progress)
 	}
 }
+
+func TestManualRetirementStartsProgressWhenConfigured(t *testing.T) {
+	start := testDate("2026-07-19 00:00:00")
+	config := testFullConfig()
+	config.ProfileEnabled = false
+	config.RetirementYears = 10
+	config.RetirementStart = start
+	config.ProgressBirthDate = time.Time{}
+
+	initial := CalculateDefaultRetirement(config, start)
+	if initial.Progress != 0 {
+		t.Fatalf("initial manual retirement progress = %.4f, want 0", initial.Progress)
+	}
+	midway := CalculateDefaultRetirement(config, start.AddDate(5, 0, 0))
+	if midway.Progress < .49 || midway.Progress > .51 {
+		t.Fatalf("midway manual retirement progress = %.4f, want about 0.5", midway.Progress)
+	}
+}

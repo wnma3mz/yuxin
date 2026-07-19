@@ -37,13 +37,13 @@ func TestCLIProcessBoundaries(t *testing.T) {
 		}
 	})
 
-	t.Run("synthetic share never reads explicit private config", func(t *testing.T) {
+	t.Run("anonymous share validates explicit private config", func(t *testing.T) {
 		privateConfig := filepath.Join(t.TempDir(), "private.toml")
 		if err := os.WriteFile(privateConfig, []byte("not valid toml\nsecret = 987654321\n"), 0o600); err != nil {
 			t.Fatal(err)
 		}
 		stdout, stderr, code := runCLIProcess(t, root, binary, "", "share", "--config", privateConfig)
-		if code != 0 || stderr != "" || !strings.Contains(stdout, "演示数据") || strings.Contains(stdout, "987654321") {
+		if code != 2 || !strings.Contains(stderr, "读取配置") || strings.Contains(stdout, "987654321") || strings.Contains(stderr, "987654321") {
 			t.Fatalf("share: code=%d stdout=%q stderr=%q", code, stdout, stderr)
 		}
 	})

@@ -10,7 +10,7 @@ import {
   layFlatBudget,
   messageKindLabels,
   sampleLabel,
-  salaryPulseAt,
+  spendingMood,
   type ContributionDraft,
   type DashboardData,
   type DistributionMetric,
@@ -19,6 +19,24 @@ import {
   type HolidayCalendarData,
 } from "./model";
 import { validateContribution } from "./validation";
+import {
+  LOCAL_PROFILE_STORAGE_KEY,
+  clearLocalProfile,
+  demoWorkSnapshotAt,
+  defaultLocalProfileDraft,
+  getOrCreateContributionCredential,
+  loadLocalProfile,
+  loadContributionCredential,
+  localWorkSnapshotAt,
+  localProfileDailyWorkMinutes,
+  localProfileContributionDraft,
+  profileToDraft,
+  saveLocalProfile,
+  upcomingHolidayAt,
+  validateLocalProfileDraft,
+  type LocalProfile,
+  type LocalProfileDraft,
+} from "./local-profile";
 
 if (window.top !== window.self) {
   const warning = document.createElement("main");
@@ -155,42 +173,293 @@ function renderMatrix(id: string, items: DistributionItem[], commentID: string):
   }
 }
 
-let salaryPulseHourly: number | null = null;
-let salaryPulseDailyMinutes: number | null = null;
 const holidayCalendar = JSON.parse(holidays2026Raw) as HolidayCalendarData;
 
-function clockTime(totalMinutes: number): string {
-  const hours = Math.floor(totalMinutes / 60) % 24;
-  const minutes = Math.floor(totalMinutes % 60);
-  return `${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}`;
+const localSettingsDialog = element<HTMLDialogElement>("local-settings-dialog");
+const localSettingsForm = element<HTMLFormElement>("local-settings-form");
+const localSettingsError = element("local-settings-error");
+const contributionDialog = element<HTMLDialogElement>("contribution-dialog");
+let currentLocalProfile: LocalProfile | null = null;
+let pendingLocalAction: "contribute" | null = null;
+
+function preciseMoney(value: number): string {
+  return new Intl.NumberFormat("zh-CN", {
+    style: "currency",
+    currency: "CNY",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(value);
 }
 
-function updateSalaryPulse(now = new Date()): void {
-  const pulse = salaryPulseAt(salaryPulseHourly, salaryPulseDailyMinutes, now, holidayCalendar);
-  if (pulse.phase === "missing" || pulse.earnedCny === null) {
-    setText("metric-live-income", "—");
-    setText("pulse-status", "等待公开样本");
+function durationLabel(totalSeconds: number): string {
+  const seconds = Math.max(0, Math.round(totalSeconds));
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  if (hours > 0) return `${hours} 小时 ${minutes} 分`;
+  if (minutes > 0) return `${minutes} 分 ${seconds % 60} 秒`;
+  return `${seconds} 秒`;
+}
+
+function readLocalProfileDraft(): LocalProfileDraft {
+  const data = new FormData(localSettingsForm);
+  const text = (name: string): string => String(data.get(name) ?? "");
+  return {
+    monthlySalaryCny: text("monthlySalaryCny"),
+    monthlyWorkdays: text("monthlyWorkdays"),
+    workdays: data.getAll("workdays").map(String),
+    startTime: text("startTime"),
+    endTime: text("endTime"),
+    lunchMinutes: text("lunchMinutes"),
+    savingsCny: text("savingsCny"),
+    retirementMode: text("retirementMode"),
+    retirementAgeYears: text("retirementAgeYears"),
+    retirementSex: text("retirementSex"),
+    retirementYearsRemaining: text("retirementYearsRemaining"),
+  };
+}
+
+function syncRetirementFields(): void {
+  const mode = element<HTMLSelectElement>("retirement-mode").value;
+  element("retirement-age-field").hidden = mode !== "estimate";
+  element("retirement-sex-field").hidden = mode !== "estimate";
+  element("retirement-remaining-field").hidden = mode !== "remaining";
+}
+
+function fillLocalSettings(profile: LocalProfile | null): void {
+  const draft = profile ? profileToDraft(profile) : defaultLocalProfileDraft();
+  for (const [name, value] of Object.entries(draft)) {
+    if (name === "workdays") continue;
+    const input = localSettingsForm.elements.namedItem(name);
+    if (input instanceof HTMLInputElement) input.value = String(value);
+  }
+  localSettingsForm.querySelectorAll<HTMLInputElement>('input[name="workdays"]').forEach((input) => {
+    input.checked = draft.workdays.includes(input.value);
+  });
+  syncRetirementFields();
+  localSettingsError.hidden = true;
+}
+
+function openLocalSettings(): void {
+  fillLocalSettings(currentLocalProfile);
+  if (typeof localSettingsDialog.showModal === "function") {
+    localSettingsDialog.showModal();
+  } else {
+    localSettingsDialog.setAttribute("open", "");
+  }
+}
+
+function closeLocalSettings(): void {
+  if (localSettingsDialog.open && typeof localSettingsDialog.close === "function") localSettingsDialog.close();
+  else localSettingsDialog.removeAttribute("open");
+}
+
+function cancelLocalSettings(): void {
+  pendingLocalAction = null;
+  closeLocalSettings();
+}
+
+function closeDialog(dialog: HTMLDialogElement): void {
+  if (dialog.open && typeof dialog.close === "function") dialog.close();
+  else dialog.removeAttribute("open");
+}
+
+function showDialog(dialog: HTMLDialogElement): void {
+  if (typeof dialog.showModal === "function") dialog.showModal();
+  else dialog.setAttribute("open", "");
+}
+
+function openContributionDialog(): void {
+  if (!currentLocalProfile) return;
+  const form = element<HTMLFormElement>("contribution-form");
+  form.reset();
+  const workMinutes = localProfileDailyWorkMinutes(currentLocalProfile);
+  setText("contribution-work-summary", `${formatMoney(currentLocalProfile.monthlySalaryCny)} · ${formatWorkMinutes(workMinutes)} / 天 · 每周 ${currentLocalProfile.workdays.length} 天`);
+  const savings = element<HTMLInputElement>("contribution-include-savings");
+  savings.disabled = currentLocalProfile.savingsCny === null;
+  savings.checked = false;
+  setText("contribution-savings-summary", currentLocalProfile.savingsCny === null ? "尚未配置存款" : `${contributionInterval("savings", currentLocalProfile.savingsCny)} · 默认不参与`);
+  const retirement = element<HTMLInputElement>("contribution-include-retirement");
+  retirement.disabled = currentLocalProfile.retirementYearsRemaining === null;
+  retirement.checked = false;
+  setText("contribution-retirement-summary", currentLocalProfile.retirementYearsRemaining === null ? "尚未配置退休年数" : `${contributionInterval("retirement", currentLocalProfile.retirementYearsRemaining)} · 默认不参与`);
+  setText("message-count", "0");
+  element("comparison-result").hidden = true;
+  element("form-error").hidden = true;
+  element("form-success").hidden = true;
+  element<HTMLButtonElement>("submit-button").disabled = !client.configured;
+  updateContributionModeCopy();
+  showDialog(contributionDialog);
+}
+
+function updateContributionModeCopy(): boolean {
+  const updating = loadContributionCredential(window.localStorage) !== null;
+  setText("contribution-dialog-title", updating ? "更新我的匿名样本" : "匿名贡献到公开看板");
+  setText("contribution-mode-note", updating
+    ? "当前浏览器已保存编辑凭证。本次提交只会更新原数值样本，不会新增一份；最终确认前不会连接 Supabase。"
+    : "首次贡献会在当前浏览器保存一份随机编辑凭证，以后只更新这份样本。最终确认前不会连接 Supabase。");
+  setText("submit-button", updating ? "更新我的匿名样本" : "匿名贡献这份数据");
+  return updating;
+}
+
+function renderLocalProfile(profile: LocalProfile | null, now = new Date()): void {
+  const badge = element("local-data-badge");
+  const clearButton = element<HTMLButtonElement>("local-clear");
+  const heroAction = element<HTMLButtonElement>("hero-local-action");
+  if (!profile) {
+    const snapshot = demoWorkSnapshotAt(now);
+    const percentage = Math.floor(snapshot.progress * 100);
+    badge.textContent = "演示数据";
+    badge.classList.add("is-demo");
+    clearButton.hidden = true;
+    heroAction.textContent = "用我的数据计算";
+    setText("local-work-status", "演示 · 工资模拟跳动中");
+    setText("local-earned", preciseMoney(snapshot.earnedCny));
+    setText("local-expected", `今日预计 ${preciseMoney(snapshot.expectedCny)}`);
+    setText("local-progress-label", `工作进度 ${percentage}%`);
+    setText("local-countdown", `演示倒计时 ${durationLabel(snapshot.secondsUntilEnd)}`);
+    setText("local-holiday-name", "端午节");
+    setText("local-holiday-distance", "还有 25 天");
+    setText("local-hourly", preciseMoney(snapshot.hourlyCny));
+    setText("local-schedule", "09:00–18:00");
+    setText("local-retirement", "29 年");
+    setText("local-lay-flat-daily", "¥23 / 天");
+    setText("local-lay-flat-mood", "奶茶预算到账");
+    setText("local-storage-note", "动态演示数据 · 配置后只保存在当前浏览器");
+    const demoProgress = element("local-progress-bar");
+    demoProgress.style.width = `${percentage}%`;
+    demoProgress.parentElement?.setAttribute("aria-valuenow", percentage.toString());
     return;
   }
-  setText("metric-live-income", `+¥${pulse.earnedCny.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
-  setText("pulse-window", `统一口径 ${clockTime(pulse.startMinutes)}–${clockTime(pulse.endMinutes)} · 含工作日与调休`);
-  const status: Record<typeof pulse.phase, string> = {
-    rest: `${pulse.restLabel ?? "今日"}休息，工资脉冲暂停`,
-    before: `等待 ${clockTime(pulse.startMinutes)} 开工`,
-    working: "样本工资正在跳动",
-    lunch: "午休中，工资暂停跳动",
-    after: "今日样本工资已收官",
-  };
-  setText("pulse-status", status[pulse.phase]);
+
+  badge.textContent = "本地数据";
+  badge.classList.remove("is-demo");
+  clearButton.hidden = false;
+  heroAction.textContent = "修改我的数据";
+  setText("local-storage-note", "仅保存在此浏览器 · 未上传");
+
+  const snapshot = localWorkSnapshotAt(profile, now, holidayCalendar);
+  const percentage = Math.round(snapshot.progress * 100);
+  setText("local-earned", preciseMoney(snapshot.earnedCny));
+  setText("local-expected", `今日预计 ${preciseMoney(snapshot.expectedCny)}`);
+  setText("local-progress-label", `工作进度 ${percentage}%`);
+  setText("local-hourly", preciseMoney(snapshot.hourlyCny));
+  setText("local-retirement", profile.retirementYearsRemaining === null ? "未配置" : profile.retirementYearsRemaining === 0 ? "预计已退休" : `${profile.retirementYearsRemaining} 年`);
+  setText("local-schedule", `${profile.startTime}–${profile.endTime} · 午休 ${profile.lunchMinutes} 分`);
+
+  const progress = element("local-progress-bar");
+  progress.style.width = `${percentage}%`;
+  progress.parentElement?.setAttribute("aria-valuenow", percentage.toString());
+
+  if (snapshot.phase === "rest") {
+    setText("local-work-status", `${snapshot.restLabel ?? "今日"} · 休息中`);
+    setText("local-countdown", "今天不等下班");
+  } else if (snapshot.phase === "before") {
+    setText("local-work-status", "尚未上班 · 摸鱼先热身");
+    setText("local-countdown", `距离上班 ${durationLabel(snapshot.secondsUntilStart)}`);
+  } else if (snapshot.phase === "working") {
+    setText("local-work-status", "今日上班中 · 工资正在跳动");
+    setText("local-countdown", `距离下班 ${durationLabel(snapshot.secondsUntilEnd)}`);
+  } else {
+    setText("local-work-status", "今日已下班 · 生活重新加载");
+    setText("local-countdown", "今日工资已收官");
+  }
+
+  const holiday = upcomingHolidayAt(now, holidayCalendar);
+  if (!holiday) {
+    setText("local-holiday-name", "等待下一年日历");
+    setText("local-holiday-distance", "当前打包年份已没有后续节假日");
+  } else {
+    setText("local-holiday-name", holiday.name);
+    setText("local-holiday-distance", holiday.ongoing ? "假期进行中，好好休息" : `还有 ${holiday.daysRemaining} 天`);
+  }
+
+  const budget = profile.savingsCny !== null && profile.retirementYearsRemaining !== null
+    ? layFlatBudget(profile.savingsCny, profile.retirementYearsRemaining)
+    : null;
+  if (budget) {
+    setText("local-lay-flat-mood", spendingMood(budget.daily));
+    setText("local-lay-flat-daily", `${formatMoney(budget.daily)} / 天`);
+  } else {
+    setText("local-lay-flat-daily", "未配置");
+    setText("local-lay-flat-mood", "填写存款与退休年数");
+  }
 }
 
-function resetSalaryPulse(hourlyCny: number | null, dailyWorkMinutes: number | null): void {
-  salaryPulseHourly = hourlyCny;
-  salaryPulseDailyMinutes = dailyWorkMinutes;
-  updateSalaryPulse();
+function restoreLocalProfile(): void {
+  try {
+    currentLocalProfile = loadLocalProfile(window.localStorage);
+  } catch {
+    currentLocalProfile = null;
+  }
+  renderLocalProfile(currentLocalProfile);
 }
 
-window.setInterval(() => updateSalaryPulse(), 1000);
+element<HTMLButtonElement>("hero-local-action").addEventListener("click", () => {
+  pendingLocalAction = null;
+  openLocalSettings();
+});
+element<HTMLButtonElement>("local-edit").addEventListener("click", () => {
+  pendingLocalAction = null;
+  openLocalSettings();
+});
+element<HTMLButtonElement>("nav-contribute").addEventListener("click", () => {
+  if (!currentLocalProfile) {
+    pendingLocalAction = "contribute";
+    openLocalSettings();
+    return;
+  }
+  openContributionDialog();
+});
+element<HTMLButtonElement>("local-settings-close").addEventListener("click", cancelLocalSettings);
+element<HTMLButtonElement>("local-settings-cancel").addEventListener("click", cancelLocalSettings);
+element<HTMLSelectElement>("retirement-mode").addEventListener("change", syncRetirementFields);
+localSettingsDialog.addEventListener("click", (event) => {
+  if (event.target === localSettingsDialog) cancelLocalSettings();
+});
+localSettingsDialog.addEventListener("cancel", () => { pendingLocalAction = null; });
+localSettingsForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  localSettingsError.hidden = true;
+  const result = validateLocalProfileDraft(readLocalProfileDraft());
+  if (!result.value) {
+    localSettingsError.textContent = result.errors.join("；");
+    localSettingsError.hidden = false;
+    return;
+  }
+  try {
+    saveLocalProfile(window.localStorage, result.value);
+  } catch {
+    localSettingsError.textContent = "浏览器阻止了本地存储，请检查隐私设置后重试。";
+    localSettingsError.hidden = false;
+    return;
+  }
+  currentLocalProfile = result.value;
+  renderLocalProfile(currentLocalProfile);
+  closeLocalSettings();
+  const submitter = event.submitter;
+  const action = pendingLocalAction ?? (submitter instanceof HTMLButtonElement && submitter.value === "contribute" ? "contribute" : null);
+  pendingLocalAction = null;
+  if (action === "contribute") openContributionDialog();
+});
+element<HTMLButtonElement>("local-clear").addEventListener("click", () => {
+  if (!window.confirm("确认清除保存在此浏览器中的余薪配置？此操作无法撤销。")) return;
+  try {
+    clearLocalProfile(window.localStorage);
+  } catch {
+    // The in-memory view can still be cleared when storage is unavailable.
+  }
+  currentLocalProfile = null;
+  renderLocalProfile(null);
+});
+element<HTMLButtonElement>("contribution-close").addEventListener("click", () => closeDialog(contributionDialog));
+contributionDialog.addEventListener("click", (event) => {
+  if (event.target === contributionDialog) closeDialog(contributionDialog);
+});
+window.addEventListener("storage", (event) => {
+  if (event.key === LOCAL_PROFILE_STORAGE_KEY) restoreLocalProfile();
+});
+window.setInterval(() => renderLocalProfile(currentLocalProfile), 1000);
+restoreLocalProfile();
 
 let insightMode: "work" | "chill" = "work";
 let insightView: "matrix" | "detail" = "matrix";
@@ -222,7 +491,6 @@ function renderDashboard(data: DashboardData, demo = false): void {
   setText("metric-salary", formatMoney(data.metrics.medianSalaryCny));
   setText("metric-hours", formatWorkMinutes(data.metrics.medianDailyWorkMinutes));
   setText("metric-hourly", formatMoney(data.metrics.medianHourlyIncomeCny));
-  resetSalaryPulse(data.metrics.medianHourlyIncomeCny, data.metrics.medianDailyWorkMinutes);
   setText("metric-salary-samples", demo ? "固定演示口径" : sampleLabel(data.metrics.salarySampleCount));
   setText("metric-hours-samples", demo ? "固定演示口径" : sampleLabel(data.metrics.salarySampleCount));
   renderPublicLayFlat(data.metrics.medianLayFlatDailyCny, data.metrics.layFlatSampleCount);
@@ -374,22 +642,20 @@ function renderComparison(input: NonNullable<ReturnType<typeof validateContribut
     grid.append(row);
   }
   element("comparison-result").hidden = false;
-  element("dashboard").scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 function readDraft(form: HTMLFormElement): ContributionDraft {
   const data = new FormData(form);
   const text = (name: string): string => String(data.get(name) ?? "");
-  return {
-    monthlySalaryCny: text("monthlySalaryCny"),
-    dailyWorkHours: text("dailyWorkHours"),
-    workdaysPerWeek: text("workdaysPerWeek"),
-    savingsCny: text("savingsCny"),
-    retirementYearsRemaining: text("retirementYearsRemaining"),
+  const profile = currentLocalProfile;
+  if (!profile) return { monthlySalaryCny: "", dailyWorkHours: "", workdaysPerWeek: "", savingsCny: "", retirementYearsRemaining: "", messageKind: text("messageKind"), messageText: text("messageText"), consent: false };
+  return localProfileContributionDraft(profile, {
+    includeSavings: data.get("includeSavings") === "on",
+    includeRetirement: data.get("includeRetirement") === "on",
     messageKind: text("messageKind"),
     messageText: text("messageText"),
     consent: data.get("consent") === "on",
-  };
+  });
 }
 
 const client = createPublicDataClient();
@@ -457,42 +723,6 @@ async function refreshPublicData(): Promise<void> {
 const messageInput = document.querySelector<HTMLInputElement>('input[name="messageText"]');
 messageInput?.addEventListener("input", () => setText("message-count", [...messageInput.value].length.toString()));
 
-let terminalStatusTimer = 0;
-document.querySelectorAll<HTMLButtonElement>(".terminal-command").forEach((button) => {
-  button.addEventListener("click", async () => {
-    const command = button.dataset.command ?? "";
-    const status = element("terminal-status");
-    window.clearTimeout(terminalStatusTimer);
-    try {
-      await navigator.clipboard.writeText(command);
-      status.textContent = "✓ 命令已复制到剪贴板";
-    } catch {
-      status.textContent = "复制失败，请手动选择命令";
-    }
-    terminalStatusTimer = window.setTimeout(() => {
-      status.textContent = "✓ 本地区间计算完成 · 尚未上传";
-    }, 2000);
-  });
-});
-
-let cliCopyTimer = 0;
-document.querySelectorAll<HTMLButtonElement>(".cli-command").forEach((button) => {
-  button.addEventListener("click", async () => {
-    const feedback = button.querySelector("small");
-    const command = button.dataset.command ?? "";
-    window.clearTimeout(cliCopyTimer);
-    try {
-      await navigator.clipboard.writeText(command);
-      if (feedback) feedback.textContent = "已复制 ✓";
-    } catch {
-      if (feedback) feedback.textContent = "复制失败";
-    }
-    cliCopyTimer = window.setTimeout(() => {
-      if (feedback) feedback.textContent = "复制";
-    }, 2000);
-  });
-});
-
 const echoRefresh = element<HTMLButtonElement>("echo-refresh");
 let echoRefreshTimer = 0;
 function refreshEchoes(): void {
@@ -551,24 +781,29 @@ async function submitContribution(value: NonNullable<ReturnType<typeof validateC
   submitButton.disabled = true;
   submitButton.textContent = "正在匿名提交…";
   try {
-    const submission = await client.submit(value);
+    const credential = getOrCreateContributionCredential(window.localStorage, window.crypto);
+    const submission = await client.submit(value, credential);
     form.reset();
     setText("message-count", "0");
     element("comparison-result").hidden = true;
     clearComparisonHighlights();
+    const action = submission.updated ? "匿名样本已更新" : "匿名样本已提交";
     successBox.textContent = submission.messageAccepted === false
-      ? "数值提交成功，但匿名回声未能送达；请勿重复提交数值。"
+      ? `${action}，但匿名回声未能送达；请勿重复提交数值。`
       : submission.messageAccepted === true
-        ? "提交成功。数值将在隐私门槛满足后进入后续统计，匿名回声将在审核通过后展示。"
-        : "提交成功。你的数值将在隐私门槛满足后进入后续公开统计。";
+        ? `${action}。数值将按公开隐私门槛统计，新的匿名回声会在审核通过后展示。`
+        : `${action}。数值将按公开隐私门槛进入聚合统计。`;
     successBox.hidden = false;
+    updateContributionModeCopy();
     await refreshPublicData();
+    if (!contributionDialog.open) showDialog(contributionDialog);
   } catch (error) {
     errorBox.textContent = error instanceof Error ? error.message : "提交失败，请稍后重试";
     errorBox.hidden = false;
+    if (!contributionDialog.open) showDialog(contributionDialog);
   } finally {
     submitButton.disabled = !client.configured;
-    submitButton.textContent = "匿名提交";
+    updateContributionModeCopy();
   }
 }
 
@@ -585,13 +820,25 @@ form.addEventListener("submit", (event) => {
     return;
   }
   pendingContribution = result.value;
+  const updating = loadContributionCredential(window.localStorage) !== null;
+  setText("confirm-title", updating ? "确认更新这份匿名样本？" : "确认发射这份匿名样本？");
+  setText("confirm-description", updating
+    ? "本次会使用当前浏览器保存的随机凭证更新原数值样本，不会新增一份。清除站点数据后将无法再更新。"
+    : "当前浏览器会保存随机编辑凭证，以后可用它更新这份数值样本。凭证不上传原文，清除站点数据后无法找回。");
+  setText("confirm-submit-button", updating ? "确认更新" : "确认匿名发射");
+  closeDialog(contributionDialog);
   if (typeof confirmDialog.showModal === "function") {
     confirmDialog.returnValue = "cancel";
     confirmDialog.showModal();
     return;
   }
-  if (window.confirm("确认匿名提交？提交后无法自行找回或修改。")) {
+  const fallbackPrompt = loadContributionCredential(window.localStorage) !== null
+    ? "确认更新这份匿名数值样本？"
+    : "确认匿名提交？当前浏览器将保存用于后续纠错的随机凭证。";
+  if (window.confirm(fallbackPrompt)) {
     void submitContribution(pendingContribution);
+  } else {
+    showDialog(contributionDialog);
   }
   pendingContribution = null;
 });
@@ -601,7 +848,33 @@ confirmDialog.addEventListener("close", () => {
   pendingContribution = null;
   if (confirmDialog.returnValue === "confirm" && value) {
     void submitContribution(value);
+  } else if (value) {
+    showDialog(contributionDialog);
   }
 });
+
+const navSectionLinks = [...document.querySelectorAll<HTMLAnchorElement>('nav a[href^="#"]')];
+let navFrame = 0;
+function updateActiveNavigation(): void {
+  navFrame = 0;
+  const readingLine = Math.min(180, window.innerHeight * 0.25);
+  let activeID = "top";
+  for (const link of navSectionLinks) {
+    const id = link.hash.slice(1);
+    const section = document.getElementById(id);
+    if (section && section.getBoundingClientRect().top <= readingLine) activeID = id;
+  }
+  for (const link of navSectionLinks) {
+    const active = link.hash === `#${activeID}`;
+    link.classList.toggle("is-active", active);
+    if (active) link.setAttribute("aria-current", "location");
+    else link.removeAttribute("aria-current");
+  }
+}
+window.addEventListener("scroll", () => {
+  if (navFrame === 0) navFrame = window.requestAnimationFrame(updateActiveNavigation);
+}, { passive: true });
+window.addEventListener("resize", updateActiveNavigation);
+updateActiveNavigation();
 
 void refreshPublicData();

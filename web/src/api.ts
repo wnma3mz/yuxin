@@ -8,7 +8,12 @@ export interface PublicDataClient {
   mode: "mock" | "supabase" | "unconfigured";
   loadDashboard(): Promise<DashboardData>;
   loadMessages(limit?: number): Promise<PublicMessage[]>;
-  submit(input: ContributionInput): Promise<{ messageAccepted: boolean | null }>;
+  submit(input: ContributionInput, editCredential: string | null): Promise<SubmissionResult>;
+}
+
+export interface SubmissionResult {
+  updated: boolean;
+  messageAccepted: boolean | null;
 }
 
 export interface SupabaseConfig {
@@ -111,26 +116,35 @@ export async function callRPC<T>(config: SupabaseConfig, name: string, parameter
   return await response.json() as T;
 }
 
+export async function deriveEditCredentialVerifier(editCredential: string | null): Promise<string | null> {
+  if (editCredential === null) return null;
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(editCredential));
+  return [...new Uint8Array(digest)].map((value) => value.toString(16).padStart(2, "0")).join("");
+}
+
 export async function submitPublicContribution(
   config: SupabaseConfig,
   input: ContributionInput,
-): Promise<{ messageAccepted: boolean | null }> {
-  await callRPC<void>(config, "submit_public_data", {
+  editCredential: string | null = null,
+): Promise<SubmissionResult> {
+  const editCredentialHash = await deriveEditCredentialVerifier(editCredential);
+  const updated = Boolean(await callRPC<boolean>(config, "submit_public_data", {
     p_monthly_salary_cny: input.monthlySalaryCny,
     p_daily_work_minutes: input.dailyWorkMinutes,
     p_workdays_per_week: input.workdaysPerWeek,
     p_savings_cny: input.savingsCny,
     p_retirement_years_remaining: input.retirementYearsRemaining,
-  });
-  if (input.messageKind === null || input.messageText === null) return { messageAccepted: null };
+    p_edit_credential_hash: editCredentialHash,
+  }));
+  if (input.messageKind === null || input.messageText === null) return { updated, messageAccepted: null };
   try {
     await callRPC<void>(config, "submit_public_message", {
       p_message_kind: input.messageKind,
       p_message_text: input.messageText,
     });
-    return { messageAccepted: true };
+    return { updated, messageAccepted: true };
   } catch {
-    return { messageAccepted: false };
+    return { updated, messageAccepted: false };
   }
 }
 
@@ -162,10 +176,10 @@ export function createPublicDataClient(): PublicDataClient {
         text: row.text,
       })));
     },
-    async submit(input) {
+    async submit(input, editCredential) {
       if (!supabase) throw new Error("公开数据服务尚未配置，暂时无法提交");
       try {
-        return await submitPublicContribution(supabase, input);
+        return await submitPublicContribution(supabase, input, editCredential);
       } catch (error) {
         throw new Error(`匿名提交失败：${error instanceof Error ? error.message : "未知错误"}`);
       }

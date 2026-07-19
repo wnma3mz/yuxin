@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -323,6 +324,32 @@ func TestConfigWizardSetsRetirementFromAgeAndDefaultsToMale(t *testing.T) {
 	}
 }
 
+func TestConfigWizardSetsManualRetirementYears(t *testing.T) {
+	config := testFullConfig()
+	path := filepath.Join(t.TempDir(), "config.toml")
+	var output bytes.Buffer
+	updated, err := configureConfig(strings.NewReader("3\n2\n25\n0\n"), &output, path, config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.ProfileEnabled || updated.RetirementYears != 25 || !updated.BirthDate.IsZero() || !updated.ProgressBirthDate.IsZero() || updated.Sex != "" {
+		t.Fatalf("manual retirement = %#v", updated)
+	}
+}
+
+func TestConfigWizardCanPreviewAndCancelAnonymousContribution(t *testing.T) {
+	config := testFullConfig()
+	path := filepath.Join(t.TempDir(), "config.toml")
+	var output bytes.Buffer
+	updated, err := configureConfig(strings.NewReader("7\nn\nn\n0\n\n0\n"), &output, path, config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(updated, config) || !strings.Contains(output.String(), "即将匿名贡献") || !strings.Contains(output.String(), "已取消匿名贡献") {
+		t.Fatalf("anonymous contribution preview = %#v, %q", updated, output.String())
+	}
+}
+
 func TestClosingRetirementClearsPersonalProfile(t *testing.T) {
 	config := testFullConfig()
 	config.BirthDate = mustDate("1990-06-18")
@@ -345,24 +372,15 @@ func TestClosingRetirementClearsPersonalProfile(t *testing.T) {
 	}
 }
 
-func TestParseAgeOrBirth(t *testing.T) {
+func TestBirthDateFromAge(t *testing.T) {
 	today := time.Date(2026, time.July, 16, 0, 0, 0, 0, time.Local)
-	tests := map[string]string{
-		"30":         "1996-07-16",
-		"1995-06":    "1995-06-01",
-		"1995/6/18":  "1995-06-18",
-		"1995年6月":    "1995-06-01",
-		"1995年6月18日": "1995-06-18",
+	birth, err := birthDateFromAge("30", today)
+	if err != nil || birth.Format("2006-01-02") != "1996-07-16" {
+		t.Fatalf("birthDateFromAge(30) = %s, %v", birth, err)
 	}
-	for input, want := range tests {
-		birth, err := parseAgeOrBirth(input, today)
-		if err != nil || birth.Format("2006-01-02") != want {
-			t.Errorf("parseAgeOrBirth(%q) = %s, %v; want %s", input, birth, err, want)
-		}
-	}
-	for _, input := range []string{"0", "101", "2027-01", "not-a-date"} {
-		if _, err := parseAgeOrBirth(input, today); err == nil {
-			t.Errorf("parseAgeOrBirth(%q) unexpectedly succeeded", input)
+	for _, input := range []string{"0", "101", "1995-06", "not-an-age"} {
+		if _, err := birthDateFromAge(input, today); err == nil {
+			t.Errorf("birthDateFromAge(%q) unexpectedly succeeded", input)
 		}
 	}
 }
@@ -392,12 +410,12 @@ func TestConfigWizardEditsRetirement(t *testing.T) {
 	config := testFullConfig()
 	path := filepath.Join(t.TempDir(), "config.toml")
 	var output bytes.Buffer
-	input := "3\n1\n1990-06\n2\n0\n"
+	input := "3\n1\n36\n2\n0\n"
 	updated, err := configureConfig(strings.NewReader(input), &output, path, config)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if updated.HideAmounts || updated.HideRetirementDate || updated.RetirementMode != "full" || !updated.ProfileEnabled || updated.Sex != "female" || updated.BirthDate.Format("2006-01-02") != "1990-06-01" {
+	if updated.HideAmounts || updated.HideRetirementDate || updated.RetirementMode != "full" || !updated.ProfileEnabled || updated.Sex != "female" || ageOnDate(updated.BirthDate, configDateOnly(time.Now())) != 36 {
 		t.Fatalf("updated display config = %#v", updated)
 	}
 }
@@ -421,6 +439,15 @@ func TestWizardSummaryHonorsPrivacySettings(t *testing.T) {
 	}
 	if !strings.Contains(output.String(), "¥••••") || strings.Contains(output.String(), "隐私模式") {
 		t.Fatalf("summary did not show privacy state: %s", output.String())
+	}
+	output.Reset()
+	config.ProfileEnabled = false
+	config.BirthDate = time.Time{}
+	config.Sex = ""
+	config.RetirementYears = 25
+	configWizard{out: &output}.summary(config)
+	if strings.Contains(output.String(), "25 年") || !strings.Contains(output.String(), "隐私隐藏") {
+		t.Fatalf("manual retirement privacy leaked: %s", output.String())
 	}
 }
 

@@ -48,8 +48,13 @@ func configureConfig(input io.Reader, output io.Writer, path string, current Con
 			updated, err = wizard.editGoal(current)
 		case "6":
 			updated, err = wizard.editMore(current)
+		case "7":
+			if shareErr := runAnonymousShare(wizard.reader, output, current, time.Now()); shareErr != nil {
+				fmt.Fprintf(output, "  匿名贡献失败：%v\n", shareErr)
+			}
+			continue
 		default:
-			fmt.Fprintln(output, "  请输入 0 到 6。")
+			fmt.Fprintln(output, "  请输入 0 到 7。")
 			continue
 		}
 		if err != nil {
@@ -74,15 +79,13 @@ func configureConfig(input io.Reader, output io.Writer, path string, current Con
 func (wizard configWizard) summary(config Config) {
 	mode := map[string]string{"monthly": "月薪", "daily": "日薪", "hourly": "时薪", "annual": "年薪"}[config.SalaryMode]
 	retirement := "关闭"
-	if config.ProfileEnabled {
-		if config.HideRetirementDate {
-			retirement = "已开启（隐私隐藏）"
-		} else {
-			sex := map[string]string{"male": "男", "female": "女"}[config.Sex]
-			retirement = fmt.Sprintf("%d 岁，%s（自动）", ageOnDate(config.BirthDate, configDateOnly(time.Now())), sex)
-		}
+	if config.HideRetirementDate && (config.ProfileEnabled || config.RetirementYears > 0) {
+		retirement = "已开启（隐私隐藏）"
+	} else if config.ProfileEnabled {
+		sex := map[string]string{"male": "男", "female": "女"}[config.Sex]
+		retirement = fmt.Sprintf("%d 岁，%s（自动）", ageOnDate(config.BirthDate, configDateOnly(time.Now())), sex)
 	} else if config.RetirementYears > 0 {
-		retirement = fmt.Sprintf("约 %d 年（旧配置）", config.RetirementYears)
+		retirement = fmt.Sprintf("约 %d 年（手动）", config.RetirementYears)
 	}
 	fmt.Fprintln(wizard.out, "\n当前配置")
 	fmt.Fprintf(wizard.out, "  1 今日入账  %s %s\n", mode, displayMoney(config.SalaryAmount, config.HideAmounts))
@@ -105,6 +108,7 @@ func (wizard configWizard) summary(config Config) {
 	}
 	fmt.Fprintf(wizard.out, "  5 目标计划   %s\n", goal)
 	fmt.Fprintf(wizard.out, "  6 更多设置   刷新 %s\n", formatInterval(config.RefreshInterval))
+	fmt.Fprintln(wizard.out, "  7 匿名贡献   预览后确认上传")
 }
 
 func (wizard configWizard) editSalary(config Config) (Config, error) {
@@ -235,8 +239,10 @@ func (wizard configWizard) editRetirement(config Config) (Config, error) {
 	defaultMode := "0"
 	if config.ProfileEnabled {
 		defaultMode = "1"
+	} else if config.RetirementYears > 0 {
+		defaultMode = "2"
 	}
-	mode, err := wizard.choice("退休倒计时：0 关闭 / 1 开启自动估算", defaultMode, "0", "1")
+	mode, err := wizard.choice("退休倒计时：0 关闭 / 1 按年龄和性别估算 / 2 手动填写剩余年数", defaultMode, "0", "1", "2")
 	if err != nil {
 		return config, err
 	}
@@ -253,16 +259,42 @@ func (wizard configWizard) editRetirement(config Config) (Config, error) {
 		return config, nil
 	}
 	today := configDateOnly(time.Now())
-	defaultBirth := "30"
+	if mode == "2" {
+		defaultYears := 30
+		if config.RetirementYears > 0 {
+			defaultYears = config.RetirementYears
+		}
+		for {
+			value, askErr := wizard.ask("距离预计退休（年）", strconv.Itoa(defaultYears))
+			if askErr != nil {
+				return config, askErr
+			}
+			years, parseErr := strconv.Atoi(strings.TrimSpace(value))
+			if parseErr != nil || years < 1 || years > 82 {
+				fmt.Fprintln(wizard.out, "  剩余年数必须是 1 到 82 之间的整数。")
+				continue
+			}
+			config.ProfileEnabled = false
+			config.BirthDate = time.Time{}
+			config.Sex = ""
+			config.FemaleTrack = ""
+			config.RetirementYears = years
+			config.RetirementStart = today
+			config.ProgressBirthDate = time.Time{}
+			config.RetirementMode = "full"
+			return config, nil
+		}
+	}
+	defaultAge := "30"
 	if config.ProfileEnabled && !config.BirthDate.IsZero() {
-		defaultBirth = config.BirthDate.Format("2006-01-02")
+		defaultAge = strconv.Itoa(ageOnDate(config.BirthDate, today))
 	}
 	for {
-		value, err := wizard.ask("年龄或出生年月（如 30 / 1995-06）", defaultBirth)
+		value, err := wizard.ask("当前年龄（岁）", defaultAge)
 		if err != nil {
 			return config, err
 		}
-		birth, err := parseAgeOrBirth(value, today)
+		birth, err := birthDateFromAge(value, today)
 		if err != nil {
 			fmt.Fprintf(wizard.out, "  %v\n", err)
 			continue
@@ -291,28 +323,13 @@ func (wizard configWizard) editAutomaticRetirement(config Config) (Config, error
 	return config, nil
 }
 
-func parseAgeOrBirth(value string, today time.Time) (time.Time, error) {
+func birthDateFromAge(value string, today time.Time) (time.Time, error) {
 	value = strings.TrimSpace(value)
-	if age, err := strconv.Atoi(value); err == nil {
-		if age < 1 || age > 100 {
-			return time.Time{}, fmt.Errorf("年龄必须在 1 到 100 岁之间。")
-		}
-		return today.AddDate(-age, 0, 0), nil
+	age, err := strconv.Atoi(value)
+	if err != nil || age < 1 || age > 100 {
+		return time.Time{}, fmt.Errorf("年龄必须是 1 到 100 之间的整数。")
 	}
-
-	normalized := strings.NewReplacer("年", "-", "月", "-", "日", "", "/", "-", ".", "-").Replace(value)
-	normalized = strings.TrimSuffix(normalized, "-")
-	for _, layout := range []string{"2006-1-2", "2006-1"} {
-		birth, err := time.ParseInLocation(layout, normalized, today.Location())
-		if err != nil {
-			continue
-		}
-		if birth.After(today) || ageOnDate(birth, today) > 100 {
-			return time.Time{}, fmt.Errorf("出生日期必须在过去 100 年内。")
-		}
-		return birth, nil
-	}
-	return time.Time{}, fmt.Errorf("请输入年龄或出生年月，如 30、1995-06 或 1995-06-18。")
+	return today.AddDate(-age, 0, 0), nil
 }
 
 func ageOnDate(birth, today time.Time) int {
