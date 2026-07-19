@@ -51,8 +51,15 @@ brew install ffmpeg-full
 ```bash
 scripts/render-promo.sh docs/assets/yuxin-promo.mp4
 
-# 生成抖音与 TikTok 共用的中文版竖屏宣传片
+# 生成抖音与 TikTok 共用的中文版竖屏宣传片（浏览器前端）
 scripts/render-social-cn.sh docs/assets/yuxin-social-cn.mp4
+```
+
+横版主体固定使用 TUI 演示；竖版主体固定使用 Chrome/Chromium 渲染的 Web 前端，不能互换。竖版默认启动本地 `web/` 并以生产数据模式截取页面；需要直接截取已部署页面时使用：
+
+```bash
+YUXIN_SOCIAL_PAGE_URL=https://wnma3mz.github.io/yuxin/ \
+  scripts/render-social-cn.sh docs/assets/yuxin-social-cn.mp4
 ```
 
 两个脚本默认混入仓库内的 `docs/assets/yuxin-promo-voice.m4a`。可通过以下环境变量调整：
@@ -60,6 +67,8 @@ scripts/render-social-cn.sh docs/assets/yuxin-social-cn.mp4
 - `YUXIN_PROMO_SILENT=1`：生成无声横版。
 - `YUXIN_PROMO_VOICE_TRACK=/path/to/voice.m4a`：替换横版配音音轨。
 - `YUXIN_SOCIAL_VOICE_TRACK=/path/to/voice.m4a`：替换竖屏配音音轨。
+- `YUXIN_SOCIAL_PAGE_URL=https://...`：指定竖屏视频使用的浏览器页面。
+- `YUXIN_CHROME=/path/to/chrome`：指定 Chrome/Chromium 可执行文件。
 - `YUXIN_FFMPEG=/path/to/ffmpeg`：指定 FFmpeg 可执行文件。
 
 演示分镜、画面和配音稿统一见[演示与宣传视频计划](demo-video-plan.md)。
