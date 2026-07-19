@@ -36,10 +36,10 @@ if [ -z "$CHROME" ]; then
     fi
   done
 fi
-[ -n "$CHROME" ] && [ -x "$CHROME" ] || {
+if [ -z "$CHROME" ] || [ ! -x "$CHROME" ]; then
   echo "找不到 Chrome/Chromium，可通过 YUXIN_CHROME 指定" >&2
   exit 1
-}
+fi
 
 mkdir -p "$(dirname -- "$OUTPUT")"
 TEMPORARY=$(mktemp -d "${TMPDIR:-/tmp}/yuxin-social-cn.XXXXXX")
