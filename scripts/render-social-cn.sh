@@ -4,7 +4,7 @@ set -eu
 ROOT=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 OUTPUT=${1:-${TMPDIR:-/tmp}/yuxin-social-cn.mp4}
 FONT=${YUXIN_SOCIAL_FONT:-/System/Library/Fonts/STHeiti Medium.ttc}
-VOICE_TRACK=${YUXIN_SOCIAL_VOICE_TRACK:-$ROOT/docs/assets/yuxin-promo-voice.m4a}
+VOICE_TRACK=${YUXIN_SOCIAL_VOICE_TRACK:-$ROOT/docs/assets/yuxin-social-voice.m4a}
 FFMPEG=${YUXIN_FFMPEG:-ffmpeg}
 PAGE_URL=${YUXIN_SOCIAL_PAGE_URL:-}
 CHROME=${YUXIN_CHROME:-}
@@ -83,13 +83,13 @@ if [ -z "$PAGE_URL" ]; then
   fi
 fi
 
-WEB_CAPTURE="$TEMPORARY/yuxin-web.png"
+WEB_CAPTURE="$TEMPORARY/yuxin-web-tall.png"
 "$CHROME" \
   --headless=new \
   --disable-gpu \
   --hide-scrollbars \
   --force-device-scale-factor=2 \
-  --window-size=540,2100 \
+  --window-size=540,6000 \
   --virtual-time-budget=5000 \
   --screenshot="$WEB_CAPTURE" \
   "$PAGE_URL" >"$TEMPORARY/chrome.log" 2>&1
@@ -99,26 +99,48 @@ WEB_CAPTURE="$TEMPORARY/yuxin-web.png"
   exit 1
 }
 
+# Capture the browser's own once-per-second calculation. Keeping each real
+# frame avoids covering the card with a second, visually inconsistent number.
+frame_index=0
+while [ "$frame_index" -lt 8 ]; do
+  frame_number=$(printf '%02d' "$frame_index")
+  frame_path="$TEMPORARY/yuxin-salary-$frame_number.png"
+  "$CHROME" \
+    --headless=new \
+    --disable-gpu \
+    --hide-scrollbars \
+    --force-device-scale-factor=2 \
+    --window-size=540,2100 \
+    --virtual-time-budget=5000 \
+    --screenshot="$frame_path" \
+    "$PAGE_URL" >"$TEMPORARY/chrome-salary-$frame_number.log" 2>&1
+  [ -s "$frame_path" ] || {
+    cat "$TEMPORARY/chrome-salary-$frame_number.log" >&2
+    echo "浏览器实时工资画面截取失败" >&2
+    exit 1
+  }
+  frame_index=$((frame_index + 1))
+done
+
 VISUAL="$TEMPORARY/visual.mp4"
 "$FFMPEG" -hide_banner -loglevel error -y \
-  -loop 1 -framerate 30 -t 3.4 -i "$WEB_CAPTURE" \
-  -loop 1 -framerate 30 -t 9 -i "$WEB_CAPTURE" \
-  -loop 1 -framerate 30 -t 3.1 -i "$WEB_CAPTURE" \
-  -loop 1 -framerate 30 -t 4.5 -i "$WEB_CAPTURE" \
+  -loop 1 -framerate 30 -t 4 -i "$TEMPORARY/yuxin-salary-00.png" \
+  -framerate 1 -start_number 0 -t 7.8 -i "$TEMPORARY/yuxin-salary-%02d.png" \
+  -loop 1 -framerate 30 -t 2.2 -i "$WEB_CAPTURE" \
+  -loop 1 -framerate 30 -t 4.1 -i "$WEB_CAPTURE" \
+  -loop 1 -framerate 30 -t 3.9 -i "$WEB_CAPTURE" \
   -filter_complex "
-    [0:v]crop=1080:1920:0:0,fps=30,settb=AVTB,setpts=PTS-STARTPTS,format=yuv420p,
-      fade=t=in:st=0:d=0.25:color=0x07100e,fade=t=out:st=3.05:d=0.35:color=0x07100e[intro];
-    [1:v]crop=1080:1920:0:'min(1050\,t*116.667)',fps=30,settb=AVTB,setpts=PTS-STARTPTS,format=yuv420p,
-      drawbox=x=0:y=1715:w=1080:h=205:color=0x07100e@0.82:t=fill,
-      drawtext=fontfile='$FONT':text='今天赚了多少  ·  还有多久下班':fontcolor=0xe4e4e7:fontsize=38:x=(w-text_w)/2:y=1760,
-      drawtext=fontfile='$FONT':text='本地保存自己的  ·  匿名查看大家的':fontcolor=0x34d399:fontsize=29:x=(w-text_w)/2:y=1830,
-      fade=t=in:st=0:d=0.35:color=0x07100e,fade=t=out:st=8.6:d=0.4:color=0x07100e[dashboard];
-    [2:v]crop=1080:1920:0:'1800+min(480\,t*154.839)',fps=30,settb=AVTB,setpts=PTS-STARTPTS,format=yuv420p,
-      drawbox=x=0:y=1715:w=1080:h=205:color=0x07100e@0.84:t=fill,
-      drawtext=fontfile='$FONT':text='公开样本只展示匿名聚合结果':fontcolor=0x38bdf8:fontsize=38:x=(w-text_w)/2:y=1765,
-      drawtext=fontfile='$FONT':text='不展示作者  ·  不公开个人原始记录':fontcolor=0xa1a1aa:fontsize=28:x=(w-text_w)/2:y=1835,
-      fade=t=in:st=0:d=0.35:color=0x07100e,fade=t=out:st=2.7:d=0.4:color=0x07100e[public];
-    [3:v]crop=1080:1920:0:0,gblur=sigma=10,eq=brightness=-0.3,fps=30,settb=AVTB,setpts=PTS-STARTPTS,format=yuv420p,
+    [0:v]fps=30,settb=AVTB,setpts=PTS-STARTPTS,
+      crop=1080:1920:0:0,format=yuv420p,
+      fade=t=in:st=0:d=0.25:color=0x07100e,fade=t=out:st=3.65:d=0.35:color=0x07100e[intro];
+    [1:v]fps=30,settb=AVTB,setpts=PTS-STARTPTS,
+      crop=1080:1920:0:'850+min(1150\,t*147.436)',format=yuv420p,
+      fade=t=in:st=0:d=0.3:color=0x07100e,fade=t=out:st=7.4:d=0.4:color=0x07100e[dashboard];
+    [2:v]crop=1080:1920:0:2450,fps=30,settb=AVTB,setpts=PTS-STARTPTS,format=yuv420p,
+      fade=t=in:st=0:d=0.2:color=0x07100e,fade=t=out:st=1.9:d=0.3:color=0x07100e[public];
+    [3:v]crop=1080:1920:0:4700,fps=30,settb=AVTB,setpts=PTS-STARTPTS,format=yuv420p,
+      fade=t=in:st=0:d=0.2:color=0x07100e,fade=t=out:st=3.75:d=0.35:color=0x07100e[echoes];
+    [4:v]crop=1080:1920:0:0,gblur=sigma=10,eq=brightness=-0.3,fps=30,settb=AVTB,setpts=PTS-STARTPTS,format=yuv420p,
       drawbox=x=70:y=430:w=940:h=940:color=0x07100e@0.78:t=fill,
       drawbox=x=70:y=430:w=940:h=940:color=0x34d399@0.45:t=2,
       drawtext=fontfile='$FONT':text='YUXIN  ·  余薪':fontcolor=0x34d399:fontsize=92:x=(w-text_w)/2:y=560,
@@ -128,7 +150,7 @@ VISUAL="$TEMPORARY/visual.mp4"
       drawtext=fontfile='$FONT':text='开源项目':fontcolor=0xa1a1aa:fontsize=30:x=(w-text_w)/2:y=1120,
       drawtext=fontfile='$FONT':text='github.com/wnma3mz/yuxin':fontcolor=0xa7f3d0:fontsize=31:x=(w-text_w)/2:y=1185,
       fade=t=in:st=0:d=0.35:color=0x07100e[outro];
-    [intro][dashboard][public][outro]concat=n=4:v=1:a=0[out]
+    [intro][dashboard][public][echoes][outro]concat=n=5:v=1:a=0[out]
   " \
   -map "[out]" -c:v libx264 -preset slow -crf 18 -pix_fmt yuv420p \
   -movflags +faststart -an "$VISUAL"

@@ -180,6 +180,7 @@ const localSettingsForm = element<HTMLFormElement>("local-settings-form");
 const localSettingsError = element("local-settings-error");
 const contributionDialog = element<HTMLDialogElement>("contribution-dialog");
 let currentLocalProfile: LocalProfile | null = null;
+let localViewMode: "profile" | "demo" = "profile";
 let pendingLocalAction: "contribute" | null = null;
 
 function preciseMoney(value: number): string {
@@ -304,14 +305,21 @@ function updateContributionModeCopy(): boolean {
 function renderLocalProfile(profile: LocalProfile | null, now = new Date()): void {
   const badge = element("local-data-badge");
   const clearButton = element<HTMLButtonElement>("local-clear");
+  const editButton = element<HTMLButtonElement>("local-edit");
+  const viewToggle = element<HTMLButtonElement>("local-view-toggle");
   const heroAction = element<HTMLButtonElement>("hero-local-action");
-  if (!profile) {
+  const showDemo = profile === null || localViewMode === "demo";
+  if (showDemo) {
     const snapshot = demoWorkSnapshotAt(now);
     const percentage = Math.floor(snapshot.progress * 100);
     badge.textContent = "演示数据";
     badge.classList.add("is-demo");
-    clearButton.hidden = true;
-    heroAction.textContent = "用我的数据计算";
+    clearButton.hidden = profile === null;
+    editButton.textContent = profile ? "修改我的数据" : "换成我的数据";
+    viewToggle.hidden = profile === null;
+    viewToggle.textContent = "回到我的数据";
+    viewToggle.setAttribute("aria-pressed", "true");
+    heroAction.textContent = profile ? "修改我的数据" : "用我的数据计算";
     setText("local-work-status", "演示 · 工资模拟跳动中");
     setText("local-earned", preciseMoney(snapshot.earnedCny));
     setText("local-expected", `今日预计 ${preciseMoney(snapshot.expectedCny)}`);
@@ -324,7 +332,9 @@ function renderLocalProfile(profile: LocalProfile | null, now = new Date()): voi
     setText("local-retirement", "29 年");
     setText("local-lay-flat-daily", "¥23 / 天");
     setText("local-lay-flat-mood", "奶茶预算到账");
-    setText("local-storage-note", "动态演示数据 · 配置后只保存在当前浏览器");
+    setText("local-storage-note", profile
+      ? "演示预览 · 我的数据仍保存在当前浏览器"
+      : "动态演示数据 · 配置后只保存在当前浏览器");
     const demoProgress = element("local-progress-bar");
     demoProgress.style.width = `${percentage}%`;
     demoProgress.parentElement?.setAttribute("aria-valuenow", percentage.toString());
@@ -334,6 +344,10 @@ function renderLocalProfile(profile: LocalProfile | null, now = new Date()): voi
   badge.textContent = "本地数据";
   badge.classList.remove("is-demo");
   clearButton.hidden = false;
+  editButton.textContent = "修改我的数据";
+  viewToggle.hidden = false;
+  viewToggle.textContent = "看演示";
+  viewToggle.setAttribute("aria-pressed", "false");
   heroAction.textContent = "修改我的数据";
   setText("local-storage-note", "仅保存在此浏览器 · 未上传");
 
@@ -391,6 +405,7 @@ function restoreLocalProfile(): void {
   } catch {
     currentLocalProfile = null;
   }
+  if (!currentLocalProfile) localViewMode = "profile";
   renderLocalProfile(currentLocalProfile);
 }
 
@@ -401,6 +416,11 @@ element<HTMLButtonElement>("hero-local-action").addEventListener("click", () => 
 element<HTMLButtonElement>("local-edit").addEventListener("click", () => {
   pendingLocalAction = null;
   openLocalSettings();
+});
+element<HTMLButtonElement>("local-view-toggle").addEventListener("click", () => {
+  if (!currentLocalProfile) return;
+  localViewMode = localViewMode === "profile" ? "demo" : "profile";
+  renderLocalProfile(currentLocalProfile);
 });
 element<HTMLButtonElement>("nav-contribute").addEventListener("click", () => {
   if (!currentLocalProfile) {
@@ -434,6 +454,7 @@ localSettingsForm.addEventListener("submit", (event) => {
     return;
   }
   currentLocalProfile = result.value;
+  localViewMode = "profile";
   renderLocalProfile(currentLocalProfile);
   closeLocalSettings();
   const submitter = event.submitter;
@@ -449,6 +470,7 @@ element<HTMLButtonElement>("local-clear").addEventListener("click", () => {
     // The in-memory view can still be cleared when storage is unavailable.
   }
   currentLocalProfile = null;
+  localViewMode = "profile";
   renderLocalProfile(null);
 });
 element<HTMLButtonElement>("contribution-close").addEventListener("click", () => closeDialog(contributionDialog));

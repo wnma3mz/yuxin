@@ -51,6 +51,9 @@ brew install ffmpeg-full
 ```bash
 scripts/render-promo.sh docs/assets/yuxin-promo.mp4
 
+# 仅在旁白文案变化时联网重新生成竖屏自然神经女声音轨
+scripts/render-social-voice.sh docs/assets/yuxin-social-voice.m4a
+
 # 生成抖音与 TikTok 共用的中文版竖屏宣传片（浏览器前端）
 scripts/render-social-cn.sh docs/assets/yuxin-social-cn.mp4
 ```
@@ -62,11 +65,14 @@ YUXIN_SOCIAL_PAGE_URL=https://wnma3mz.github.io/yuxin/ \
   scripts/render-social-cn.sh docs/assets/yuxin-social-cn.mp4
 ```
 
-两个脚本默认混入仓库内的 `docs/assets/yuxin-promo-voice.m4a`。可通过以下环境变量调整：
+横版使用 `docs/assets/yuxin-promo-voice.m4a`；竖版使用独立文案生成的 `docs/assets/yuxin-social-voice.m4a`。两个成品音轨都保存在仓库内，常规视频渲染无需联网。重新生成竖屏旁白需要 Python 3 和 `edge-tts >= 7.2.8`，推荐使用 `python3 -m edge_tts`，避免误调用 PATH 中的旧版本。可通过以下环境变量调整：
 
 - `YUXIN_PROMO_SILENT=1`：生成无声横版。
 - `YUXIN_PROMO_VOICE_TRACK=/path/to/voice.m4a`：替换横版配音音轨。
 - `YUXIN_SOCIAL_VOICE_TRACK=/path/to/voice.m4a`：替换竖屏配音音轨。
+- `YUXIN_SOCIAL_TTS_PYTHON=/path/to/python3`：指定安装了新版 `edge-tts` 的 Python。
+- `YUXIN_SOCIAL_TTS_VOICE=VOICE`：替换竖屏神经语音，默认 `zh-CN-XiaoxiaoNeural`。
+- `YUXIN_SOCIAL_TTS_RATE=+12%`、`YUXIN_SOCIAL_TTS_PITCH=-2Hz`：调整竖屏旁白语速和音高。
 - `YUXIN_SOCIAL_PAGE_URL=https://...`：指定竖屏视频使用的浏览器页面。
 - `YUXIN_CHROME=/path/to/chrome`：指定 Chrome/Chromium 可执行文件。
 - `YUXIN_FFMPEG=/path/to/ffmpeg`：指定 FFmpeg 可执行文件。
