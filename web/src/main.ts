@@ -306,6 +306,17 @@ function updateContributionModeCopy(): boolean {
   return updating;
 }
 
+function renderUpcomingHoliday(now: Date): void {
+  const holiday = upcomingHolidayAt(now, holidayCalendar);
+  if (!holiday) {
+    setText("local-holiday-name", "等待下一年日历");
+    setText("local-holiday-distance", "当前打包年份已没有后续节假日");
+    return;
+  }
+  setText("local-holiday-name", holiday.name);
+  setText("local-holiday-distance", holiday.ongoing ? "假期进行中，好好休息" : `还有 ${holiday.daysRemaining} 天`);
+}
+
 function renderLocalProfile(profile: LocalProfile | null, now = new Date()): void {
   const badge = element("local-data-badge");
   const clearButton = element<HTMLButtonElement>("local-clear");
@@ -313,6 +324,7 @@ function renderLocalProfile(profile: LocalProfile | null, now = new Date()): voi
   const viewToggle = element<HTMLButtonElement>("local-view-toggle");
   const heroAction = element<HTMLButtonElement>("hero-local-action");
   const showDemo = profile === null || localViewMode === "demo";
+  renderUpcomingHoliday(now);
   if (showDemo) {
     const snapshot = demoWorkSnapshotAt(now);
     const percentage = Math.floor(snapshot.progress * 100);
@@ -329,8 +341,6 @@ function renderLocalProfile(profile: LocalProfile | null, now = new Date()): voi
     setText("local-expected", `今日预计 ${preciseMoney(snapshot.expectedCny)}`);
     setText("local-progress-label", `工作进度 ${percentage}%`);
     setText("local-countdown", `演示倒计时 ${durationLabel(snapshot.secondsUntilEnd)}`);
-    setText("local-holiday-name", "端午节");
-    setText("local-holiday-distance", "还有 25 天");
     setText("local-hourly", preciseMoney(snapshot.hourlyCny));
     setText("local-schedule", "09:00–18:00");
     setText("local-retirement", "29 年");
@@ -380,15 +390,6 @@ function renderLocalProfile(profile: LocalProfile | null, now = new Date()): voi
   } else {
     setText("local-work-status", "今日已下班 · 生活重新加载");
     setText("local-countdown", "今日工资已收官");
-  }
-
-  const holiday = upcomingHolidayAt(now, holidayCalendar);
-  if (!holiday) {
-    setText("local-holiday-name", "等待下一年日历");
-    setText("local-holiday-distance", "当前打包年份已没有后续节假日");
-  } else {
-    setText("local-holiday-name", holiday.name);
-    setText("local-holiday-distance", holiday.ongoing ? "假期进行中，好好休息" : `还有 ${holiday.daysRemaining} 天`);
   }
 
   const budget = profile.savingsCny !== null && profile.retirementYearsRemaining !== null

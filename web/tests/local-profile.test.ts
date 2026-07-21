@@ -27,7 +27,10 @@ class MemoryStorage {
 
 const calendar: HolidayCalendarData = {
   year: 2026,
-  periods: [{ name: "国庆节", start: "2026-10-01", end: "2026-10-07" }],
+  periods: [
+    { name: "中秋节", start: "2026-09-25", end: "2026-09-27" },
+    { name: "国庆节", start: "2026-10-01", end: "2026-10-07" },
+  ],
   workdays: ["2026-10-10"],
 };
 
@@ -120,6 +123,7 @@ describe("local profile", () => {
     expect(localWorkSnapshotAt(value, new Date(2026, 9, 10, 10, 0), calendar).phase).toBe("working");
     expect(upcomingHolidayAt(new Date(2026, 8, 28), calendar)).toEqual({ name: "国庆节", daysRemaining: 3, ongoing: false });
     expect(upcomingHolidayAt(new Date(2026, 9, 2), calendar)).toEqual({ name: "国庆节", daysRemaining: 0, ongoing: true });
+    expect(upcomingHolidayAt(new Date(2026, 6, 21), calendar)).toEqual({ name: "中秋节", daysRemaining: 66, ongoing: false });
   });
 
   it("keeps demo earnings moving across reloads using the current clock", () => {
