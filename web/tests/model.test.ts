@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { characterBar, contributionInterval, formatMoney, formatWorkMinutes, layFlatBudget, sampleLabel, spendingMood } from "../src/model";
+import { characterBar, contributionInterval, formatMoney, formatWorkMinutes, layFlatBudget, matrixPercentage, sampleLabel, spendingMood } from "../src/model";
 
 describe("dashboard formatting", () => {
   it("formats monetary medians as whole yuan", () => {
@@ -16,6 +16,12 @@ describe("dashboard formatting", () => {
   it("distinguishes empty and populated samples", () => {
     expect(sampleLabel(1286)).toBe("1,286 份有效样本");
     expect(sampleLabel(0)).toBe("暂无样本");
+  });
+
+  it("hides matrix percentages below the public threshold", () => {
+    expect(matrixPercentage(0, 0)).toBeNull();
+    expect(matrixPercentage(0, 5)).toBeNull();
+    expect(matrixPercentage(5, 10)).toBe("50%");
   });
 
   it("maps values to neutral public intervals", () => {

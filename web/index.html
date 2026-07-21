@@ -71,6 +71,7 @@
       </section>
 
       <div id="connection-notice" class="notice" role="status" hidden></div>
+      <div id="submission-toast" class="submission-toast" role="status" hidden></div>
 
       <section class="section dashboard-section" id="dashboard" aria-labelledby="dashboard-title">
         <div class="section-heading">
@@ -182,7 +183,7 @@
             <p class="eyebrow">ANONYMOUS ECHOES</p>
             <h2 id="echoes-title">匿名回声</h2>
           </div>
-          <div class="echo-tools"><p>听听大家在想什么。</p><button id="echo-refresh" type="button" disabled>[r] 随机听听</button></div>
+          <div class="echo-tools"><p id="echo-description">听听大家在想什么。</p><button id="echo-refresh" type="button" disabled>[r] 随机听听</button></div>
         </div>
         <div class="echo-grid" id="echo-grid" aria-live="polite"></div>
         <div class="empty-state compact" id="echo-empty">

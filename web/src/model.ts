@@ -92,6 +92,11 @@ export function sampleLabel(count: number): string {
   return count > 0 ? `${count.toLocaleString("zh-CN")} 份有效样本` : "暂无样本";
 }
 
+export function matrixPercentage(count: number, total: number): string | null {
+  if (count <= 0 || total <= 0) return null;
+  return `${(count / total * 100).toFixed(0)}%`;
+}
+
 export interface LayFlatBudget {
   daily: number;
   monthly: number;

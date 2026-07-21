@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getDemoDashboard, getDemoMessages, shouldShowDemoData } from "../src/mock";
+import { getDemoDashboard, getDemoMessages, shouldShowDemoData, shouldShowDemoMessages } from "../src/mock";
 
 describe("cold-start demo data", () => {
   it("uses demo data only for local mock or a pre-release public batch", () => {
@@ -7,6 +7,13 @@ describe("cold-start demo data", () => {
     expect(shouldShowDemoData("supabase", 0)).toBe(true);
     expect(shouldShowDemoData("supabase", 10)).toBe(false);
     expect(shouldShowDemoData("unconfigured", 0)).toBe(false);
+  });
+
+  it("uses clearly labelled demo messages only when public messages are empty", () => {
+    expect(shouldShowDemoMessages("mock", 3)).toBe(true);
+    expect(shouldShowDemoMessages("supabase", 0)).toBe(true);
+    expect(shouldShowDemoMessages("supabase", 1)).toBe(false);
+    expect(shouldShowDemoMessages("unconfigured", 0)).toBe(false);
   });
 
   it("returns isolated fixed data that cannot mutate later renders", () => {

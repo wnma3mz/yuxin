@@ -91,6 +91,10 @@ export function shouldShowDemoData(mode: "mock" | "supabase" | "unconfigured", p
   return mode === "mock" || (mode === "supabase" && publicSampleCount < 10);
 }
 
+export function shouldShowDemoMessages(mode: "mock" | "supabase" | "unconfigured", publicMessageCount: number): boolean {
+  return mode === "mock" || (mode === "supabase" && publicMessageCount === 0);
+}
+
 export function createMockDataClient() {
   const credentials = new Set<string>();
   return {

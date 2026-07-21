@@ -1,13 +1,14 @@
 import "./styles.css";
 import holidays2026Raw from "../../internal/app/data/holidays-2026.json?raw";
 import { createPublicDataClient } from "./api";
-import { getDemoDashboard, getDemoMessages, shouldShowDemoData } from "./mock";
+import { getDemoDashboard, getDemoMessages, shouldShowDemoData, shouldShowDemoMessages } from "./mock";
 import {
   formatMoney,
   formatWorkMinutes,
   characterBar,
   contributionInterval,
   layFlatBudget,
+  matrixPercentage,
   messageKindLabels,
   sampleLabel,
   spendingMood,
@@ -151,18 +152,21 @@ function renderMatrix(id: string, items: DistributionItem[], commentID: string):
   const total = items.reduce((sum, item) => sum + item.count, 0);
   for (const item of items) {
     const detail = matrixDetails[item.label] ?? { subtitle: "聚合样本", comment: "这个象限暂时保持沉默。" };
-    const percentage = total > 0 ? item.count / total * 100 : 0;
+    const percentage = matrixPercentage(item.count, total);
     const cell = document.createElement("button");
     cell.type = "button";
     cell.className = "matrix-cell";
     cell.dataset.label = item.label;
-    cell.setAttribute("aria-label", `${item.label}：${percentage.toFixed(0)}%，${item.count} 份聚合样本`);
+    cell.disabled = percentage === null;
+    cell.setAttribute("aria-label", percentage === null
+      ? `${item.label}：样本尚未达到公开门槛`
+      : `${item.label}：${percentage}，${item.count} 份聚合样本`);
     const label = document.createElement("strong");
     label.textContent = item.label;
     const subtitle = document.createElement("small");
-    subtitle.textContent = detail.subtitle;
+    subtitle.textContent = percentage === null ? "样本未达公开门槛" : detail.subtitle;
     const value = document.createElement("b");
-    value.textContent = `${percentage.toFixed(0)}%`;
+    value.textContent = percentage ?? "—";
     cell.append(label, subtitle, value);
     cell.addEventListener("click", () => {
       container.querySelectorAll(".matrix-cell.is-active").forEach((candidate) => candidate.classList.remove("is-active"));
@@ -685,7 +689,16 @@ let currentDashboard: DashboardData | null = null;
 let currentMessages: PublicMessage[] = [];
 let dashboardIsDemo = false;
 const notice = element("connection-notice");
+const submissionToast = element("submission-toast");
 const submitButton = element<HTMLButtonElement>("submit-button");
+let submissionToastTimer = 0;
+
+function showSubmissionToast(message: string): void {
+  window.clearTimeout(submissionToastTimer);
+  submissionToast.textContent = message;
+  submissionToast.hidden = false;
+  submissionToastTimer = window.setTimeout(() => { submissionToast.hidden = true; }, 6000);
+}
 
 document.querySelectorAll<HTMLButtonElement>("[data-insight-mode]").forEach((button) => {
   button.addEventListener("click", () => {
@@ -723,9 +736,10 @@ async function refreshPublicData(): Promise<void> {
   try {
     const [liveDashboard, liveMessages] = await Promise.all([client.loadDashboard(), client.loadMessages(24)]);
     dashboardIsDemo = shouldShowDemoData(client.mode, liveDashboard.totalSubmissions);
+    const messagesAreDemo = shouldShowDemoMessages(client.mode, liveMessages.length);
     const coldStart = client.mode === "supabase" && dashboardIsDemo;
     const dashboard = dashboardIsDemo ? getDemoDashboard() : liveDashboard;
-    const messages = dashboardIsDemo ? getDemoMessages(24) : liveMessages;
+    const messages = messagesAreDemo ? getDemoMessages(24) : liveMessages;
     currentDashboard = dashboard;
     currentMessages = messages;
     if (coldStart) {
@@ -733,6 +747,9 @@ async function refreshPublicData(): Promise<void> {
       notice.classList.add("cold-start-notice");
       notice.textContent = "冷启动演示 · 真实公开样本尚未满 10 份，以下为固定演示数据，不代表真实用户；匿名提交仍进入真实数据库。";
     }
+    setText("echo-description", messagesAreDemo
+      ? "示例回声 · 暂无已审核的真实内容"
+      : "听听大家在想什么。");
     renderDashboard(dashboard, dashboardIsDemo);
     renderMessages(shuffled(messages).slice(0, 9));
     echoRefresh.disabled = messages.length === 0;
@@ -810,15 +827,16 @@ async function submitContribution(value: NonNullable<ReturnType<typeof validateC
     element("comparison-result").hidden = true;
     clearComparisonHighlights();
     const action = submission.updated ? "匿名样本已更新" : "匿名样本已提交";
-    successBox.textContent = submission.messageAccepted === false
+    const successMessage = submission.messageAccepted === false
       ? `${action}，但匿名回声未能送达；请勿重复提交数值。`
       : submission.messageAccepted === true
         ? `${action}。数值将按公开隐私门槛统计，新的匿名回声会在审核通过后展示。`
         : `${action}。数值将按公开隐私门槛进入聚合统计。`;
+    successBox.textContent = successMessage;
     successBox.hidden = false;
     updateContributionModeCopy();
     await refreshPublicData();
-    if (!contributionDialog.open) showDialog(contributionDialog);
+    showSubmissionToast(successMessage);
   } catch (error) {
     errorBox.textContent = error instanceof Error ? error.message : "提交失败，请稍后重试";
     errorBox.hidden = false;
