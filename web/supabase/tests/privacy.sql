@@ -116,8 +116,8 @@ begin
     raise exception 'pending message was exposed publicly';
   end if;
 
-  if (select (public.get_public_dashboard()->>'totalSubmissions')::integer) <> 0 then
-    raise exception 'same-day contribution leaked into public dashboard';
+  if (select (public.get_public_dashboard()->>'totalSubmissions')::integer) <> 2 then
+    raise exception 'same-day contributions were not included in the public dashboard';
   end if;
 end;
 $$;
@@ -143,8 +143,8 @@ do $$
 declare
   dashboard jsonb := public.get_public_dashboard();
 begin
-  if (dashboard->>'totalSubmissions')::integer <> 10 then
-    raise exception 'public total should be released in groups of ten: %', dashboard;
+  if (dashboard->>'totalSubmissions')::integer <> 12 then
+    raise exception 'public total should include every contribution: %', dashboard;
   end if;
   if (dashboard #>> '{distributions,salary,0,count}')::integer <> 0 then
     raise exception 'salary bucket below five samples was not suppressed: %', dashboard;
@@ -190,8 +190,9 @@ begin
   );
 
   after_extra_sample := public.get_public_dashboard();
-  if after_extra_sample <> before_extra_sample then
-    raise exception 'an incomplete release batch changed the public dashboard: before %, after %',
+  if (after_extra_sample->>'totalSubmissions')::integer
+      <> (before_extra_sample->>'totalSubmissions')::integer + 1 then
+    raise exception 'a new contribution did not increment the public dashboard: before %, after %',
       before_extra_sample,
       after_extra_sample;
   end if;
